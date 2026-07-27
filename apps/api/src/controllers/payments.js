@@ -268,11 +268,12 @@ const getReceipt = async (req, res) => {
     }
 
     const receipt = await prisma.receipt.findUnique({
-      where: { transactionId: Number(transaction_id) }
+      where: { transactionId: Number(transaction_id) },
+      include: { transaction: { include: { student: true } } }
     });
-
-    if (!receipt) {
-      return res.status(404).json({ error: 'Receipt not found' });
+    if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
+    if (req.user.role === 'guardian' && receipt.transaction.student.guardianId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: Access denied' });
     }
 
     return res.status(200).json({

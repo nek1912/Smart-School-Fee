@@ -55,6 +55,12 @@ const submitKYC = async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
+    // Verify guardian ownership
+    if (req.user && req.user.role === 'guardian' && student.guardianId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: Access denied' });
+    }
+
+
     // Compare OCR parsed results with form inputs
     const ocrName = ocrData.name;
     const ocrDob = ocrData.dob;
@@ -342,6 +348,12 @@ const submitStage2KYC = async (req, res) => {
     if (!studentKYC) {
       return res.status(404).json({ error: 'Student Stage 1 KYC not found' });
     }
+
+    const student = await prisma.student.findUnique({ where: { id: Number(student_id) } });
+    if (req.user && req.user.role === 'guardian' && student && student.guardianId !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden: Access denied' });
+    }
+
 
     // Encrypt sensitive banking fields
     const encryptedBankAccount = encrypt(bank_account);

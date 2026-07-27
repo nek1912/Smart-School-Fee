@@ -10,6 +10,9 @@ const { requestId, securityHeaders, corsOptions } = require('./middlewares/secur
 const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { authenticate, checkRole } = require('./middlewares/rbac');
 const { auditLogger } = require('./middlewares/audit');
+const { validateBody } = require('./middlewares/validate');
+const paymentSchemas = require('./schemas/paymentSchemas');
+const feeSchemas = require('./schemas/feeSchemas');
 const authController = require('./controllers/auth');
 const feeController = require('./controllers/fee');
 const kycController = require('./controllers/kyc');
@@ -119,6 +122,7 @@ app.post(
   '/api/fees/structures',
   authenticate,
   checkRole(['admin']),
+  validateBody(feeSchemas.createFeeStructureSchema),
   auditLogger('fee_structure', 'create_fee_structure'),
   feeController.createFeeStructure
 );
@@ -133,6 +137,7 @@ app.post(
   '/api/fees/assignments',
   authenticate,
   checkRole(['admin', 'cashier']),
+  validateBody(feeSchemas.assignFeeSchema),
   auditLogger('fee_assignment', 'assign_fee'),
   feeController.assignFee
 );
@@ -183,6 +188,7 @@ app.post(
   '/api/payments/initiate',
   authenticate,
   checkRole(['guardian']),
+  validateBody(paymentSchemas.initiatePaymentSchema),
   paymentsController.initiatePayment
 );
 app.post(
@@ -211,6 +217,7 @@ app.post(
   '/api/payments/collect-manual',
   authenticate,
   checkRole(['admin', 'cashier']),
+  validateBody(paymentSchemas.collectManualSchema),
   paymentsController.collectManual
 );
 
@@ -219,6 +226,7 @@ app.post(
   '/api/payments/offline',
   authenticate,
   checkRole(['admin', 'cashier']),
+  validateBody(paymentSchemas.collectOfflineSchema),
   paymentsController.collectOffline
 );
 app.post(
