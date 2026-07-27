@@ -8,7 +8,7 @@ import Approvals from './pages/admin/Approvals';
 import Payment from './pages/guardian/Payment';
 import PaymentSuccess from './pages/guardian/PaymentSuccess';
 import Receipts from './pages/guardian/Receipts';
-import axios from 'axios';
+import { api } from './api/client';
 import AppShell from './components/layout/AppShell';
 import RoleNav from './components/layout/RoleNav';
 import StatusBadge from './components/common/StatusBadge';
@@ -62,7 +62,7 @@ export default function App() {
 
   const fetchCashiers = async () => {
     try {
-      const response = await axios.get('/api/admin/cashiers');
+      const response = await api.get('/admin/cashiers');
       setCashiersList(response.data);
     } catch (err) {
       console.error('Failed to fetch cashiers:', err);
@@ -71,7 +71,7 @@ export default function App() {
 
   const fetchAuditLogs = async () => {
     try {
-      const response = await axios.get('/api/admin/audit-logs');
+      const response = await api.get('/admin/audit-logs');
       setAuditLogs(response.data);
     } catch (err) {
       console.error('Failed to fetch audit logs:', err);
@@ -83,9 +83,7 @@ export default function App() {
 
   const fetchMyStudents = async () => {
     try {
-      const response = await axios.get('/api/guardians/students', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/guardians/students');
       setStudents(response.data);
     } catch (err) {
       console.error('Failed to fetch students:', err);
@@ -138,7 +136,7 @@ export default function App() {
     setCashierErr(null);
 
     try {
-      const response = await axios.post('/api/auth/signup', {
+      const response = await api.post('/auth/signup', {
         ...cashierForm,
         role: 'cashier'
       });

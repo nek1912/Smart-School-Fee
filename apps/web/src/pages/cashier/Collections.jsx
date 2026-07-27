@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Tesseract from 'tesseract.js';
 import { addPaymentToQueue } from '../../utils/idb';
 

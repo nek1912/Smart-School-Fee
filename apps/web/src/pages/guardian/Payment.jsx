@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api } from '../../api/client';
 import PaymentButton from '../../components/common/PaymentButton';
 
 export default function Payment() {
@@ -13,7 +13,7 @@ export default function Payment() {
   useEffect(() => {
     const fetchWards = async () => {
       try {
-        const res = await axios.get('/api/guardians/students');
+        const res = await api.get('/api/guardians/students');
         setStudents(res.data);
         if (res.data.length > 0) {
           setSelectedStudentId(res.data[0].id.toString());
@@ -33,7 +33,7 @@ export default function Payment() {
       setLoading(true);
       setError(null);
       try {
-        const res = await axios.get(`/api/fees/assignments?studentId=${selectedStudentId}`);
+        const res = await api.get(`/api/fees/assignments?studentId=${selectedStudentId}`);
         setAssignments(res.data);
       } catch (err) {
         console.error(err);
@@ -48,14 +48,14 @@ export default function Payment() {
   const handleDownloadReceipt = async (assignmentId) => {
     try {
       // Find the success transaction for this assignment
-      const txRes = await axios.get('/api/payments/transactions');
+      const txRes = await api.get('/api/payments/transactions');
       const tx = txRes.data.find(t => t.feeAssignmentId === assignmentId && t.status === 'success');
       if (!tx) {
         alert('Receipt document is being generated. Please check back in a moment.');
         return;
       }
       
-      const receiptRes = await axios.get(`/api/payments/receipt?transaction_id=${tx.id}`);
+      const receiptRes = await api.get(`/payments/receipt?transaction_id=${tx.id}`);
       const link = document.createElement('a');
       link.href = receiptRes.data.receiptUrl;
       link.download = `Receipt-${tx.receiptNumber || 'Payment'}.pdf`;
