@@ -70,11 +70,30 @@ const getMetrics = async (req, res) => {
     });
     const todayCollections = Number(todayResult._sum.amount || 0);
 
+    // 5. Calculate unreconciled deposits (successful CASH/CHEQUE that are deposited but not reconciled)
+    const unreconciledDepositsResult = await prisma.transaction.aggregate({
+      where: {
+        status: 'success',
+        method: { in: ['CASH', 'CHEQUE'] },
+        NOT: { depositedAt: null },
+        receiptRecord: { isNot: null }
+      },
+      _sum: { amount: true }
+    });
+
+    // 6. Calculate refunded total
+    const refundedResult = await prisma.transaction.aggregate({
+      where: { status: 'reversed' },
+      _sum: { amount: true }
+    });
+
     return res.status(200).json({
       bank_balance: bankBalance,
       in_hand_cash: inHandCash,
       pending_fees: pendingFees,
-      today_collections: todayCollections
+      today_collections: todayCollections,
+      unreconciled_deposits: Number(unreconciledDepositsResult._sum.amount || 0),
+      refunded_total: Number(refundedResult._sum.amount || 0)
     });
   } catch (error) {
     console.error('Get dashboard metrics error:', error);

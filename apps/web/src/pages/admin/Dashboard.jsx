@@ -101,7 +101,7 @@ export default function Dashboard({ setAdminTab }) {
     if (action === 'Add Expense') {
       if (setAdminTab) setAdminTab('expenses');
     } else if (action === 'Send Reminder') {
-      setToastMessage('🔔 SMS & Email overdue payment reminders dispatched to all defaulters!');
+      setToastMessage('Reminder dispatch is not configured yet. Export the defaulter list or open WhatsApp links from the defaulter panel.');
       setTimeout(() => setToastMessage(null), 4000);
     } else if (action === 'Waive Fee') {
       loadStudents();

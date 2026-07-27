@@ -204,7 +204,10 @@ export default function Collections() {
 
       const data = await res.json();
       if (res.status === 200 || res.status === 201) {
-        setSuccess(`Payment recorded successfully! Receipt generated: ${data.receiptNumber || 'Pending clearance'}`);
+        const receipt = data.receiptNumber || data.transaction?.receiptNumber;
+        setSuccess(method === 'CASH'
+          ? `Cash payment recorded. Receipt: ${receipt || 'created'}. Cash remains in-hand until deposited.`
+          : 'Cheque recorded. Receipt will be generated only after bank clearance.');
         // Reset selections
         setSelectedAssignmentId('');
         setChequeNo('');

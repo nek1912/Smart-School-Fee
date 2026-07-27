@@ -70,6 +70,14 @@ export default function Payment() {
 
   const selectedStudent = students.find(s => s.id.toString() === selectedStudentId);
 
+  const adjustedAmount = (asg) => {
+    const base = Number(asg.feeStructure.amount);
+    return (asg.waiverPenalties || []).reduce((total, item) => {
+      if (item.status !== 'approved') return total;
+      return item.type === 'penalty' ? total + Number(item.amount) : total - Number(item.amount);
+    }, base);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
       
@@ -149,7 +157,7 @@ export default function Payment() {
                           Term {asg.feeStructure.academicYear.label}
                         </td>
                         <td style={{ padding: '15px', fontWeight: 700, color: 'white' }}>
-                          ₹{Number(asg.feeStructure.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{Number(adjustedAmount(asg)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td style={{ padding: '15px', color: isOverdue ? 'var(--error)' : 'var(--text-secondary)' }}>
                           {new Date(asg.dueDate).toLocaleDateString()} {isOverdue && '(Overdue)'}
@@ -172,7 +180,7 @@ export default function Payment() {
                           ) : (
                             <PaymentButton 
                               feeAssignmentId={asg.id} 
-                              amount={asg.feeStructure.amount} 
+                              amount={adjustedAmount(asg)} 
                               disabled={selectedStudent.status !== 'active'}
                             />
                           )}
