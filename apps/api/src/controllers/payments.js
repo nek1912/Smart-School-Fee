@@ -453,5 +453,6 @@ module.exports = {
   collectManual,
   collectOffline,
   syncOffline,
-  depositCash
+  depositCash,
+  canAutoPromoteMockPayment
 };

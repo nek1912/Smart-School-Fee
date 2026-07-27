@@ -29,10 +29,10 @@ export default function OCRUpload({ docType, onOCRComplete }) {
     const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
 
     // 1. Try to find DOB (e.g. DOB: 15/08/2012, Date of Birth: 15-08-2012, 15/08/2012)
-    const dobRegex = /(?:DOB|Date of Birth|Birth|DOB:)\s*[:\-]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4})/i;
+    const dobRegex = /(?:DOB|Date of Birth|Birth|DOB:)\s*[:-]?\s*(\d{2}[/\-]\d{2}[/\-]\d{4})/i;
     const dobMatch = text.match(dobRegex);
     if (dobMatch) {
-      const dobStr = dobMatch[1].replace(/\-/g, '/'); // normalize separator
+      const dobStr = dobMatch[1].replace(/-/g, '/'); // normalize separator
       const parts = dobStr.split('/');
       if (parts.length === 3) {
         // Assume format is DD/MM/YYYY

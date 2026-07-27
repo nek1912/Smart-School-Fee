@@ -9,7 +9,8 @@
     "db:generate": "pnpm --filter smart-school-api db:generate",
     "db:seed": "pnpm --filter smart-school-api db:seed",
     "db:studio": "pnpm --filter smart-school-api db:studio",
-    "test": "node apps/api/verify_day1.js"
+    "test": "node apps/api/verify_day1.js",
+    "verify:production": "node scripts/verify-production-readiness.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
