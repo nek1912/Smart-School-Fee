@@ -41,9 +41,34 @@ model Student {
   kycRecord        StudentKYC?
   assignments      FeeAssignment[]
   transactions     Transaction[]
-  waiverPenalties  WaiverPenalty[]
+  waiverPenalties WaiverPenalty[]
 
   @@map("students")
+}
+
+model OtpChallenge {
+  id          Int       @id @default(autoincrement())
+  mobile      String    @db.VarChar(15)
+  intent      String    @db.VarChar(40)
+  otpHash     String    @map("otp_hash") @db.VarChar(255)
+  payload     Json?
+  attempts    Int       @default(0)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamp()
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamp()
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp()
+
+  @@index([mobile, intent, consumedAt])
+  @@map("otp_challenges")
+}
+
+model LoginAttempt {
+  id          Int       @id @default(autoincrement())
+  mobile      String    @unique @db.VarChar(15)
+  count       Int       @default(0)
+  lockUntil   DateTime? @map("lock_until") @db.Timestamp()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamp()
+
+  @@map("login_attempts")
 }
 
 model AcademicYear {

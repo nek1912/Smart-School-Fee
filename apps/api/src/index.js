@@ -78,6 +78,14 @@ app.get(
   }
 );
 
+// Admin-only staff creation route
+app.post(
+  '/api/admin/staff',
+  authenticate,
+  checkRole(['admin']),
+  authController.createStaff
+);
+
 // Protected Admin Route to fetch Cashiers list
 app.get(
   '/api/admin/cashiers',

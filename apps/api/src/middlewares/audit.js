@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { redactForAudit } = require('../utils/redact');
 
 const auditLogger = (entity, actionName) => {
   return async (req, res, next) => {
@@ -17,8 +18,8 @@ const auditLogger = (entity, actionName) => {
           action: actionName || `${req.method} ${req.originalUrl}`,
           entity: entity || 'api',
           entityId: data && data.id ? data.id : (data && data.user && data.user.id ? data.user.id : null),
-          before: req.body ? req.body : null,
-          after: data ? data : null
+          before: req.body ? redactForAudit(req.body) : null,
+          after: data ? redactForAudit(data) : null
         }
       }).catch(err => {
         console.error('Audit log creation failed:', err);
@@ -39,8 +40,8 @@ const logAudit = async ({ actorId, actorRole, action, entity, entityId, before, 
         action,
         entity,
         entityId,
-        before,
-        after
+        before: redactForAudit(before),
+        after: redactForAudit(after)
       }
     });
   } catch (err) {

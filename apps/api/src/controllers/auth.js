@@ -2,19 +2,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
+const { requireConfig } = require('../config/env');
+const { createOtpChallenge, verifyOtpChallenge } = require('../domain/auth/otpService');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-2026';
-
-// In-memory stores for OTPs and Login Failures (for development/demo purposes)
-const otpStore = {}; // mobile -> { otp, expiresAt, intent, tempPayload }
 const loginAttempts = {}; // mobile -> { count, lockUntil }
 
 const LOCKOUT_LIMIT = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
-const OTP_EXPIRY_DURATION = 5 * 60 * 1000; // 5 minutes
-
-// Generate a mock 6-digit OTP
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // Signup handler
 const signup = async (req, res) => {
@@ -26,10 +20,9 @@ const signup = async (req, res) => {
     }
 
     const requestedRole = role || 'guardian';
-    const allowedRoles = ['admin', 'cashier', 'employee', 'guardian'];
-
+    const allowedRoles = ['guardian'];
     if (!allowedRoles.includes(requestedRole)) {
-      return res.status(400).json({ error: 'Invalid role specified' });
+      return res.status(403).json({ error: 'Staff accounts must be created by an authenticated admin' });
     }
 
     // Role restrictions: Cashier creation must be performed by an Admin
@@ -129,7 +122,7 @@ const signup = async (req, res) => {
     const student = result.student;
 
     // Generate token
-    const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '24h' });
+    const token = jwt.sign({ id: newUser.id, role: newUser.role }, requireConfig().jwtSecret, { expiresIn: '24h' });
 
     // Remove password hash from response
     const { passwordHash: _, ...userWithoutPassword } = newUser;
@@ -217,13 +210,11 @@ const login = async (req, res) => {
     delete loginAttempts[mobile];
 
     // Generate mock OTP
-    const otp = generateOTP();
-    otpStore[mobile] = {
-      otp,
-      expiresAt: Date.now() + OTP_EXPIRY_DURATION,
+    const { otp } = await createOtpChallenge({
+      mobile,
       intent: 'login',
-      tempPayload: { id: user.id, role: user.role }
-    };
+      payload: { id: user.id, role: user.role }
+    });
 
     // Print to console for verification / testing
     console.log(`\n--- [OTP DEMO] --- \nSMS Sent to: ${mobile}\nOTP Code: ${otp}\nExpires In: 5 minutes\n-------------------\n`);
@@ -248,30 +239,10 @@ const verifyOTP = async (req, res) => {
       return res.status(400).json({ error: 'Mobile and OTP are required' });
     }
 
-    const storedOtpData = otpStore[mobile];
-
-    if (!storedOtpData) {
-      return res.status(400).json({ error: 'OTP not requested or expired' });
-    }
-
-    if (Date.now() > storedOtpData.expiresAt) {
-      delete otpStore[mobile];
-      return res.status(400).json({ error: 'OTP expired' });
-    }
-
-    if (storedOtpData.otp !== otp) {
-      return res.status(400).json({ error: 'Invalid OTP code' });
-    }
-
-    const payload = storedOtpData.tempPayload;
-    delete otpStore[mobile];
-
-    // Fetch full user record
-    const user = await prisma.guardian.findUnique({
-      where: { id: payload.id }
-    });
-
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+    const { payload } = await verifyOtpChallenge({ mobile, intent: 'login', otp });
+    const user = await prisma.guardian.findUnique({ where: { id: payload.id } });
+    if (!user) return res.status(401).json({ error: 'Unauthorized: User not found' });
+    const token = jwt.sign({ id: user.id, role: user.role }, requireConfig().jwtSecret, { expiresIn: '24h' });
     const { passwordHash: _, ...userWithoutPassword } = user;
 
     // Log Audit Action
@@ -314,12 +285,11 @@ const forgotPassword = async (req, res) => {
       return res.status(200).json({ message: 'OTP sent if mobile exists' });
     }
 
-    const otp = generateOTP();
-    otpStore[mobile] = {
-      otp,
-      expiresAt: Date.now() + OTP_EXPIRY_DURATION,
-      intent: 'reset_password'
-    };
+    const { otp } = await createOtpChallenge({
+      mobile,
+      intent: 'reset_password',
+      payload: { id: user.id }
+    });
 
     console.log(`\n--- [OTP FORGOT PASSWORD] --- \nSMS Sent to: ${mobile}\nOTP Code: ${otp}\nExpires In: 5 minutes\n-----------------------------\n`);
 
@@ -339,22 +309,7 @@ const resetPassword = async (req, res) => {
       return res.status(400).json({ error: 'Mobile, OTP and new password are required' });
     }
 
-    const storedOtpData = otpStore[mobile];
-
-    if (!storedOtpData || storedOtpData.intent !== 'reset_password') {
-      return res.status(400).json({ error: 'OTP request not found' });
-    }
-
-    if (Date.now() > storedOtpData.expiresAt) {
-      delete otpStore[mobile];
-      return res.status(400).json({ error: 'OTP expired' });
-    }
-
-    if (storedOtpData.otp !== otp) {
-      return res.status(400).json({ error: 'Invalid OTP' });
-    }
-
-    delete otpStore[mobile];
+    const { payload } = await verifyOtpChallenge({ mobile, intent: 'reset_password', otp });
 
     const user = await prisma.guardian.findUnique({ where: { mobile } });
     if (!user) {
@@ -481,6 +436,54 @@ const getAuditLogs = async (req, res) => {
   }
 };
 
+const createStaff = async (req, res) => {
+  try {
+    const { name, mobile, email, password, role } = req.body;
+    const requestedRole = role || 'cashier';
+
+    if (!name || !mobile || !email || !password) {
+      return res.status(400).json({ error: 'name, mobile, email and password are required' });
+    }
+    if (!['cashier', 'employee'].includes(requestedRole)) {
+      return res.status(400).json({ error: 'Only cashier or employee staff accounts can be created here' });
+    }
+
+    const existingUser = await prisma.guardian.findFirst({ where: { OR: [{ mobile }, { email }] } });
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this mobile or email already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const staff = await prisma.$transaction(async (tx) => {
+      const user = await tx.guardian.create({
+        data: { name, mobile, email, passwordHash, role: requestedRole }
+      });
+      if (requestedRole === 'cashier') {
+        await tx.cashier.create({
+          data: { userId: user.id, createdByAdminId: req.user.id, status: 'active' }
+        });
+      }
+      return user;
+    });
+
+    const { passwordHash: _, ...safeStaff } = staff;
+    await logAudit({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'create_staff',
+      entity: 'guardian',
+      entityId: staff.id,
+      before: null,
+      after: safeStaff
+    });
+
+    return res.status(201).json({ user: safeStaff });
+  } catch (error) {
+    console.error('Create staff error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 const getMyStudents = async (req, res) => {
   try {
     const students = await prisma.student.findMany({
@@ -503,5 +506,6 @@ module.exports = {
   submitConsent,
   getCashiers,
   getAuditLogs,
-  getMyStudents
+  getMyStudents,
+  createStaff
 };
