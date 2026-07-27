@@ -3,35 +3,33 @@ const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { CASHFREE_CLIENT_ID, CASHFREE_CLIENT_SECRET, CASHFREE_BASE_URL, verifySignature } = require('../config/cashfree');
 const { generateReceiptBase64 } = require('../utils/receipts');
-
-const canAutoPromoteMockPayment = (nodeEnv) => nodeEnv !== 'production';
 const { collectCash, collectCheque, markUpiSuccess, markUpiFailed } = require('../domain/payments/paymentService');
 const { requireConfig } = require('../config/env');
 const { syncOfflinePayments } = require('../domain/payments/offlineSyncService');
+const { ValidationError, NotFoundError, AppError } = require('../errors/AppError');
 
-// Initiate UPI Checkout (Sandbox)
-const initiatePayment = async (req, res) => {
+const canAutoPromoteMockPayment = (nodeEnv) => nodeEnv !== 'production';
+
+const initiatePayment = async (req, res, next) => {
   try {
     const { feeAssignmentId, method, idempotencyKey } = req.body;
     const guardianId = req.user.id;
 
     if (!feeAssignmentId || !method || !idempotencyKey) {
-      return res.status(400).json({ error: 'feeAssignmentId, method and idempotencyKey are required' });
+      throw new ValidationError('feeAssignmentId, method and idempotencyKey are required');
     }
 
     if (method !== 'UPI') {
-      return res.status(400).json({ error: 'Checkout initiation only supports UPI' });
+      throw new ValidationError('Checkout initiation only supports UPI');
     }
 
-    // 1. Check idempotency key
     const existingTx = await prisma.transaction.findUnique({
       where: { idempotencyKey }
     });
     if (existingTx) {
-      return res.status(400).json({ error: 'Duplicate payment request detected' });
+      throw new ValidationError('Duplicate payment request detected');
     }
 
-    // 2. Fetch fee assignment
     const assignment = await prisma.feeAssignment.findUnique({
       where: { id: Number(feeAssignmentId) },
       include: {
@@ -43,22 +41,20 @@ const initiatePayment = async (req, res) => {
     });
 
     if (!assignment) {
-      return res.status(404).json({ error: 'Fee assignment not found' });
+      throw new NotFoundError('Fee assignment');
     }
 
     if (assignment.status === 'paid') {
-      return res.status(400).json({ error: 'This fee component is already fully paid' });
+      throw new ValidationError('This fee component is already fully paid');
     }
 
-    // Verify ownership
     if (assignment.student.guardianId !== guardianId) {
-      return res.status(403).json({ error: 'Unauthorized ward lookup' });
+      throw new AppError('Unauthorized ward lookup', 403);
     }
 
     const orderId = `ORD_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
     const amount = Number(assignment.feeStructure.amount);
 
-    // 3. Create pending transaction
     const transaction = await prisma.transaction.create({
       data: {
         studentId: assignment.studentId,
@@ -71,9 +67,8 @@ const initiatePayment = async (req, res) => {
       }
     });
 
-    // 4. Call Cashfree Orders Sandbox API
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    
+
     try {
       const orderPayload = {
         order_id: orderId,
@@ -107,7 +102,6 @@ const initiatePayment = async (req, res) => {
         throw new Error('Cashfree sandbox failed to return a valid payment_link');
       }
 
-      // Log Audit Log
       await logAudit({
         actorId: guardianId,
         actorRole: req.user.role,
@@ -126,7 +120,7 @@ const initiatePayment = async (req, res) => {
 
     } catch (apiErr) {
       console.warn('⚠️ Cashfree Sandbox gateway error (falling back to local mock simulator):', apiErr.response?.data || apiErr.message);
-      
+
       const mockPaymentUrl = `${frontendUrl}/payment/success?order_id=${orderId}`;
 
       await logAudit({
@@ -146,44 +140,36 @@ const initiatePayment = async (req, res) => {
       });
     }
 
-  } catch (error) {
-    console.error('Initiate payment error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Cashfree Sandbox Webhook (Source of Truth)
-const handleWebhook = async (req, res) => {
+const handleWebhook = async (req, res, next) => {
   try {
     const signature = req.headers['x-webhook-signature'];
     const timestamp = req.headers['x-webhook-timestamp'];
-    
-    // Express body-parser makes raw body access difficult unless captured.
-    // For local test runners, we support passing signature matching.
+
     const rawBody = JSON.stringify(req.body);
 
     const isVerified = verifySignature(signature, rawBody, timestamp);
-    
-    // In dev / sandbox testing, we allow webhook payload processing if signature matches,
-    // or if bypass header is set in test runs.
+
     const isTestBypass = process.env.NODE_ENV !== 'production' && req.headers['x-test-bypass'] === 'true';
 
     if (!isVerified && !isTestBypass) {
       console.warn('⚠️ Rejected unauthorized Webhook signature attempt.');
-      return res.status(401).json({ error: 'Invalid webhook signature' });
+      throw new AppError('Invalid webhook signature', 401);
     }
 
-    // Extract parameters robustly
     const data = req.body.data || req.body;
     const orderId = data.order?.order_id || req.body.order_id || data.order_id;
     const orderStatus = data.order?.order_status || data.payment?.payment_status || req.body.order_status || req.body.payment_status || 'PAID';
     const gatewayTxnId = data.payment?.cf_payment_id || req.body.txn_id || req.body.cf_payment_id || `TXN_${Date.now()}`;
 
     if (!orderId) {
-      return res.status(400).json({ error: 'Missing order_id reference' });
+      throw new ValidationError('Missing order_id reference');
     }
 
-    // Retrieve pending transaction
     const transaction = await prisma.transaction.findFirst({
       where: { gatewayRef: orderId },
       include: {
@@ -197,34 +183,31 @@ const handleWebhook = async (req, res) => {
     });
 
     if (!transaction) {
-      return res.status(404).json({ error: 'Transaction reference not found' });
+      throw new NotFoundError('Transaction reference');
     }
 
-    // If transaction is already successful, return idempotent success
     if (transaction.status === 'success') {
       return res.status(200).json({ status: 'already_processed' });
     }
 
-          if (orderStatus === 'PAID' || orderStatus === 'SUCCESS' || orderStatus === 'SUCCESSFUL') {
+    if (orderStatus === 'PAID' || orderStatus === 'SUCCESS' || orderStatus === 'SUCCESSFUL') {
       await markUpiSuccess({ orderId, gatewayTxnId });
       return res.status(200).json({ status: 'success' });
     }
     await markUpiFailed({ orderId, reason: orderStatus });
     return res.status(200).json({ status: 'failed' });
 
-  } catch (error) {
-    console.error('Webhook processing error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Verify Order Payment Status (Polling endpoint)
-const verifyPayment = async (req, res) => {
+const verifyPayment = async (req, res, next) => {
   try {
     const { order_id } = req.query;
 
     if (!order_id) {
-      return res.status(400).json({ error: 'order_id is required' });
+      throw new ValidationError('order_id is required');
     }
 
     let tx = await prisma.transaction.findFirst({
@@ -240,10 +223,9 @@ const verifyPayment = async (req, res) => {
     });
 
     if (!tx) {
-      return res.status(404).json({ error: 'Transaction not found' });
+      throw new NotFoundError('Transaction');
     }
 
-    // Auto-promote mock checkout only in non-production environments
     if (tx.status === 'pending' && canAutoPromoteMockPayment(requireConfig().nodeEnv)) {
       tx = await markUpiSuccess({ orderId: order_id, gatewayTxnId: `MOCK_${Date.now()}`, actorId: tx.student.guardianId });
     }
@@ -253,41 +235,37 @@ const verifyPayment = async (req, res) => {
       transactionId: tx.id,
       receiptNumber: tx.receiptNumber
     });
-  } catch (error) {
-    console.error('Verify payment error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Fetch Receipt Download URL
-const getReceipt = async (req, res) => {
+const getReceipt = async (req, res, next) => {
   try {
     const { transaction_id } = req.query;
 
     if (!transaction_id) {
-      return res.status(400).json({ error: 'transaction_id is required' });
+      throw new ValidationError('transaction_id is required');
     }
 
     const receipt = await prisma.receipt.findUnique({
       where: { transactionId: Number(transaction_id) },
       include: { transaction: { include: { student: true } } }
     });
-    if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
+    if (!receipt) throw new NotFoundError('Receipt');
     if (req.user.role === 'guardian' && receipt.transaction.student.guardianId !== req.user.id) {
-      return res.status(403).json({ error: 'Forbidden: Access denied' });
+      throw new AppError('Forbidden: Access denied', 403);
     }
 
     return res.status(200).json({
       receiptUrl: receipt.fileUrl
     });
-  } catch (error) {
-    console.error('Get receipt error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Get My Transactions (Wards history for parent, or all for admin/cashier)
-const getTransactions = async (req, res) => {
+const getTransactions = async (req, res, next) => {
   try {
     const role = req.user.role;
     let transactions = [];
@@ -301,7 +279,6 @@ const getTransactions = async (req, res) => {
         orderBy: { createdAt: 'desc' }
       });
     } else {
-      // Guardian Wards
       transactions = await prisma.transaction.findMany({
         where: {
           student: { guardianId: req.user.id }
@@ -315,28 +292,26 @@ const getTransactions = async (req, res) => {
     }
 
     return res.status(200).json(transactions);
-  } catch (error) {
-    console.error('Get transactions error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Cashier Manual Collection (CASH or CHEQUE)
-const collectManual = async (req, res) => {
+const collectManual = async (req, res, next) => {
   try {
     const { feeAssignmentId, method, chequeNo, bank, deposited } = req.body;
-    const cashierId = req.user.id; // Admin or Cashier staff user id
+    const cashierId = req.user.id;
 
     if (!feeAssignmentId || !method) {
-      return res.status(400).json({ error: 'feeAssignmentId and method are required' });
+      throw new ValidationError('feeAssignmentId and method are required');
     }
 
     if (method !== 'CASH' && method !== 'CHEQUE') {
-      return res.status(400).json({ error: 'Manual collection only supports CASH or CHEQUE' });
+      throw new ValidationError('Manual collection only supports CASH or CHEQUE');
     }
 
     if (method === 'CHEQUE' && (!chequeNo || !bank)) {
-      return res.status(400).json({ error: 'chequeNo and bank are required for cheque payments' });
+      throw new ValidationError('chequeNo and bank are required for cheque payments');
     }
 
     const assignment = await prisma.feeAssignment.findUnique({
@@ -348,11 +323,11 @@ const collectManual = async (req, res) => {
     });
 
     if (!assignment) {
-      return res.status(404).json({ error: 'Fee assignment not found' });
+      throw new NotFoundError('Fee assignment');
     }
 
     if (assignment.status === 'paid') {
-      return res.status(400).json({ error: 'Fee component is already paid' });
+      throw new ValidationError('Fee component is already paid');
     }
 
     const amount = Number(assignment.feeStructure.amount);
@@ -363,26 +338,24 @@ const collectManual = async (req, res) => {
 
     return res.status(201).json({ success: true, message: `${method} payment logged successfully`, transaction });
 
-  } catch (error) {
-    console.error('Collect manual payment error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const collectOffline = async (req, res) => {
+const collectOffline = async (req, res, next) => {
   try {
     const { student_id, fee_assignment_id, amount, method, cheque_no, bank, idempotency_key } = req.body;
     const actorId = req.user.id;
 
     if (!fee_assignment_id || !method || !idempotency_key) {
-      return res.status(400).json({ error: 'fee_assignment_id, method and idempotency_key are required' });
+      throw new ValidationError('fee_assignment_id, method and idempotency_key are required');
     }
 
     if (method !== 'CASH' && method !== 'CHEQUE') {
-      return res.status(400).json({ error: 'Offline collection only supports CASH or CHEQUE' });
+      throw new ValidationError('Offline collection only supports CASH or CHEQUE');
     }
 
-    // 1. Check Idempotency Key
     const existingTx = await prisma.transaction.findUnique({
       where: { idempotencyKey: idempotency_key },
       include: { chequeRecords: true }
@@ -397,13 +370,12 @@ const collectOffline = async (req, res) => {
       : await collectCheque({ feeAssignmentId: fee_assignment_id, amount, chequeNo: cheque_no, bank, idempotencyKey: idempotency_key, actorId, actorRole: req.user.role });
     return res.status(201).json(transaction);
 
-  } catch (error) {
-    console.error('Collect offline payment error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const syncOffline = async (req, res) => {
+const syncOffline = async (req, res, next) => {
   try {
     const { payments } = req.body;
     const result = await syncOfflinePayments({
@@ -412,12 +384,12 @@ const syncOffline = async (req, res) => {
       actorRole: req.user.role
     });
     return res.status(200).json(result);
-  } catch (error) {
-    console.error('Sync offline payments error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
-const depositCash = async (req, res) => {
+
+const depositCash = async (req, res, next) => {
   try {
     const { id } = req.params;
     const transaction = await prisma.transaction.update({
@@ -438,9 +410,8 @@ const depositCash = async (req, res) => {
     });
 
     return res.status(200).json(transaction);
-  } catch (error) {
-    console.error('Deposit cash error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 

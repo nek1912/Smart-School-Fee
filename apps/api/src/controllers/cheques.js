@@ -1,8 +1,8 @@
 const prisma = require('../config/db');
 const { generateReceiptBase64 } = require('./payments');
+const { NotFoundError, ValidationError } = require('../errors/AppError');
 
-// List all cheque records
-const getCheques = async (req, res) => {
+const getCheques = async (req, res, next) => {
   try {
     const cheques = await prisma.chequeRecord.findMany({
       include: {
@@ -16,14 +16,12 @@ const getCheques = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
     return res.status(200).json(cheques);
-  } catch (error) {
-    console.error('Get cheques error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Deposit cheque: transition deposit_status -> 'bank_pending'
-const depositCheque = async (req, res) => {
+const depositCheque = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -32,7 +30,7 @@ const depositCheque = async (req, res) => {
     });
 
     if (!cheque) {
-      return res.status(404).json({ error: 'Cheque record not found' });
+      throw new NotFoundError('Cheque record');
     }
 
     const updatedCheque = await prisma.chequeRecord.update({
@@ -40,7 +38,6 @@ const depositCheque = async (req, res) => {
       data: { depositStatus: 'bank_pending' }
     });
 
-    // Update the parent transaction depositedAt timestamp
     await prisma.transaction.update({
       where: { id: cheque.transactionId },
       data: { depositedAt: new Date() }
@@ -59,14 +56,12 @@ const depositCheque = async (req, res) => {
     });
 
     return res.status(200).json(updatedCheque);
-  } catch (error) {
-    console.error('Deposit cheque error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Bounce cheque: transition deposit_status -> 'bounced', reopen fee, apply ₹500 penalty, notify guardian
-const bounceCheque = async (req, res) => {
+const bounceCheque = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { bounce_reason } = req.body;
@@ -84,13 +79,12 @@ const bounceCheque = async (req, res) => {
     });
 
     if (!cheque) {
-      return res.status(404).json({ error: 'Cheque record not found' });
+      throw new NotFoundError('Cheque record');
     }
 
     let penaltyRecord;
 
     await prisma.$transaction(async (tx) => {
-      // 1. Update cheque status to bounced
       await tx.chequeRecord.update({
         where: { id: cheque.id },
         data: {
@@ -99,19 +93,16 @@ const bounceCheque = async (req, res) => {
         }
       });
 
-      // 2. Reopen fee assignment (status: 'pending')
       await tx.feeAssignment.update({
         where: { id: cheque.transaction.feeAssignmentId },
         data: { status: 'pending' }
       });
 
-      // 3. Mark transaction as failed
       await tx.transaction.update({
         where: { id: cheque.transactionId },
         data: { status: 'failed' }
       });
 
-      // 4. Apply a ₹500 bounce penalty
       penaltyRecord = await tx.waiverPenalty.create({
         data: {
           studentId: cheque.transaction.studentId,
@@ -124,10 +115,8 @@ const bounceCheque = async (req, res) => {
         }
       });
 
-      // 5. Send mock notification SMS/email
       console.log(`\n--- [SMS/EMAIL NOTIFICATION] ---\nTo: ${cheque.transaction.student.guardian.mobile} / ${cheque.transaction.student.guardian.email}\nDear ${cheque.transaction.student.guardian.name},\nYour cheque for ₹${Number(cheque.transaction.amount).toFixed(2)} has bounced. The linked fee assignment has been reopened, and a cheque bounce penalty of ₹500.00 has been applied.\n---------------------------------\n`);
 
-      // 6. Log audit trail
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
@@ -148,14 +137,12 @@ const bounceCheque = async (req, res) => {
       penalty: penaltyRecord
     });
 
-  } catch (error) {
-    console.error('Bounce cheque error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Clear cheque: transition deposit_status -> 'cleared', mark transaction success, generate receipt
-const clearCheque = async (req, res) => {
+const clearCheque = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -172,7 +159,7 @@ const clearCheque = async (req, res) => {
     });
 
     if (!cheque) {
-      return res.status(404).json({ error: 'Cheque record not found' });
+      throw new NotFoundError('Cheque record');
     }
 
     if (cheque.depositStatus === 'cleared') {
@@ -182,13 +169,11 @@ const clearCheque = async (req, res) => {
     let updatedCheque;
 
     await prisma.$transaction(async (tx) => {
-      // 1. Update cheque status
       updatedCheque = await tx.chequeRecord.update({
         where: { id: cheque.id },
         data: { depositStatus: 'cleared' }
       });
 
-      // 2. Generate sequential receipt number
       const currentYear = new Date().getFullYear();
       const successTxs = await tx.transaction.findMany({
         where: {
@@ -211,7 +196,6 @@ const clearCheque = async (req, res) => {
       }
       const receiptNumber = `REC-${currentYear}-${String(nextNum).padStart(4, '0')}`;
 
-      // 3. Mark transaction as success and set receipt number
       const updatedTx = await tx.transaction.update({
         where: { id: cheque.transactionId },
         data: {
@@ -220,13 +204,11 @@ const clearCheque = async (req, res) => {
         }
       });
 
-      // 4. Mark fee assignment as paid
       await tx.feeAssignment.update({
         where: { id: cheque.transaction.feeAssignmentId },
         data: { status: 'paid' }
       });
 
-      // 5. Generate Receipt
       const receiptBase64 = await generateReceiptBase64(
         updatedTx,
         cheque.transaction.student,
@@ -242,7 +224,6 @@ const clearCheque = async (req, res) => {
         }
       });
 
-      // 6. Log audit
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
@@ -258,9 +239,8 @@ const clearCheque = async (req, res) => {
 
     return res.status(200).json(updatedCheque);
 
-  } catch (error) {
-    console.error('Clear cheque error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 

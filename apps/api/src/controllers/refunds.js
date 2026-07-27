@@ -1,14 +1,15 @@
 const prisma = require('../config/db');
 const { generateReceiptBase64 } = require('../utils/receipts');
 const { decrypt } = require('../utils/crypto');
+const { ValidationError, NotFoundError } = require('../errors/AppError');
 
-const initiateRefund = async (req, res) => {
+const initiateRefund = async (req, res, next) => {
   try {
     const { transaction_id, reason } = req.body;
     const adminId = req.user.id;
 
     if (!transaction_id || !reason) {
-      return res.status(400).json({ error: 'transaction_id and reason are required' });
+      throw new ValidationError('transaction_id and reason are required');
     }
 
     const originalTx = await prisma.transaction.findUnique({
@@ -20,27 +21,22 @@ const initiateRefund = async (req, res) => {
     });
 
     if (!originalTx) {
-      return res.status(404).json({ error: 'Original transaction not found' });
+      throw new NotFoundError('Original transaction');
     }
 
     if (originalTx.status !== 'success') {
-      return res.status(400).json({ error: 'Only successful transactions can be refunded' });
+      throw new ValidationError('Only successful transactions can be refunded');
     }
 
-    // Check if Stage 2 KYC (banking details) is complete
     const studentKYC = await prisma.studentKYC.findUnique({
       where: { studentId: originalTx.studentId }
     });
 
     if (!studentKYC || !studentKYC.isBankingComplete) {
-      return res.status(400).json({
-        error: 'Banking details required for refund. Please collect Stage 2 KYC.'
-      });
+      throw new ValidationError('Banking details required for refund. Please collect Stage 2 KYC.');
     }
 
-    // Execute refund inside database transaction block
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate sequential refund receipt number: REF-YYYY-XXXX
       const currentYear = new Date().getFullYear();
       const lastRef = await tx.transaction.findFirst({
         where: {
@@ -60,12 +56,11 @@ const initiateRefund = async (req, res) => {
       }
       const receiptNumber = `REF-${currentYear}-${String(nextRefSeq).padStart(4, '0')}`;
 
-      // 2. Create Reversal Transaction
       const refundTransaction = await tx.transaction.create({
         data: {
           studentId: originalTx.studentId,
           feeAssignmentId: originalTx.feeAssignmentId,
-          amount: -Number(originalTx.amount), // Negative amount
+          amount: -Number(originalTx.amount),
           method: 'REVERSAL',
           status: 'reversed',
           gatewayRef: `REFUND_${originalTx.id}`,
@@ -74,13 +69,11 @@ const initiateRefund = async (req, res) => {
         }
       });
 
-      // 3. Reopen the associated FeeAssignment to pending
       await tx.feeAssignment.update({
         where: { id: originalTx.feeAssignmentId },
         data: { status: 'pending' }
       });
 
-      // 4. Generate Reversal PDF Receipt
       const receiptBase64 = await generateReceiptBase64(
         refundTransaction,
         originalTx.student,
@@ -88,7 +81,6 @@ const initiateRefund = async (req, res) => {
         originalTx.feeAssignment.feeStructure
       );
 
-      // 5. Save Receipt Record
       await tx.receipt.create({
         data: {
           transactionId: refundTransaction.id,
@@ -100,7 +92,6 @@ const initiateRefund = async (req, res) => {
       return { refundTransaction, receiptNumber, receiptBase64 };
     });
 
-    // Generate Audit Log
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
@@ -113,7 +104,6 @@ const initiateRefund = async (req, res) => {
       }
     });
 
-    // Notify Guardian (Mock SMS/Email prints)
     const decryptedAccount = decrypt(studentKYC.bankAccount);
     console.log(`\n--- [SMS/EMAIL NOTIFICATION] ---\nTo: ${originalTx.student.guardian.email}\nDear ${originalTx.student.guardian.name}, your refund of INR ${Number(originalTx.amount).toFixed(2)} has been successfully processed to Account: ****${decryptedAccount ? decryptedAccount.slice(-4) : 'N/A'}. Reason: ${reason}. Receipt: REF-${result.receiptNumber}\n---------------------------------\n`);
 
@@ -124,9 +114,8 @@ const initiateRefund = async (req, res) => {
       receipt_number: result.receiptNumber
     });
 
-  } catch (error) {
-    console.error('Initiate refund error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 

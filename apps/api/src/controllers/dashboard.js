@@ -1,9 +1,7 @@
 const prisma = require('../config/db');
 
-// /api/dashboard/metrics
-const getMetrics = async (req, res) => {
+const getMetrics = async (req, res, next) => {
   try {
-    // 1. Calculate bank_balance (sum of success transactions + reversed transactions)
     const successResult = await prisma.transaction.aggregate({
       where: {
         status: 'success',
@@ -19,7 +17,6 @@ const getMetrics = async (req, res) => {
 
     const bankBalance = Number(successResult._sum.amount || 0) + Number(reversedResult._sum.amount || 0);
 
-    // 2. Calculate in_hand_cash (sum of CASH transactions where depositedAt IS NULL and status is success)
     const inHandResult = await prisma.transaction.aggregate({
       where: {
         method: 'CASH',
@@ -30,8 +27,6 @@ const getMetrics = async (req, res) => {
     });
     const inHandCash = Number(inHandResult._sum.amount || 0);
 
-    // 3. Calculate pending_fees (sum of fee_assignments where status = 'pending' or 'overdue')
-    // Includes waiver and penalty adjustments
     const pendingAssignments = await prisma.feeAssignment.findMany({
       where: {
         status: { in: ['pending', 'overdue'] }
@@ -55,7 +50,6 @@ const getMetrics = async (req, res) => {
       pendingFees += amt;
     });
 
-    // 4. Calculate today_collections (sum of transactions where created_at = today in local/UTC date boundaries)
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date();
@@ -70,7 +64,6 @@ const getMetrics = async (req, res) => {
     });
     const todayCollections = Number(todayResult._sum.amount || 0);
 
-    // 5. Calculate unreconciled deposits (successful CASH/CHEQUE that are deposited but not reconciled)
     const unreconciledDepositsResult = await prisma.transaction.aggregate({
       where: {
         status: 'success',
@@ -81,7 +74,6 @@ const getMetrics = async (req, res) => {
       _sum: { amount: true }
     });
 
-    // 6. Calculate refunded total
     const refundedResult = await prisma.transaction.aggregate({
       where: { status: 'reversed' },
       _sum: { amount: true }
@@ -95,14 +87,12 @@ const getMetrics = async (req, res) => {
       unreconciled_deposits: Number(unreconciledDepositsResult._sum.amount || 0),
       refunded_total: Number(refundedResult._sum.amount || 0)
     });
-  } catch (error) {
-    console.error('Get dashboard metrics error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// /api/dashboard/revenue-breakdown
-const getRevenueBreakdown = async (req, res) => {
+const getRevenueBreakdown = async (req, res, next) => {
   try {
     const { period = 'monthly', class: classFilter } = req.query;
 
@@ -138,19 +128,16 @@ const getRevenueBreakdown = async (req, res) => {
       breakdown[type] = (breakdown[type] || 0) + Number(t.amount);
     });
 
-    // Clean outputs
     const labels = Object.keys(breakdown);
     const data = Object.values(breakdown);
 
     return res.status(200).json({ labels, data });
-  } catch (error) {
-    console.error('Get revenue breakdown error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// /api/dashboard/defaulters
-const getDefaulters = async (req, res) => {
+const getDefaulters = async (req, res, next) => {
   try {
     const { sort_by = 'days', filter_class } = req.query;
 
@@ -190,10 +177,9 @@ const getDefaulters = async (req, res) => {
       const diffTime = Math.max(0, today - dueDate);
       const overdueDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-      // AI Heuristic Predictor calculation
       const failedCount = item.student.transactions.length;
       const isKycComplete = item.student.status === 'active';
-      
+
       let riskFactor = overdueDays * 3;
       riskFactor += failedCount * 20;
       if (isKycComplete) {
@@ -220,29 +206,24 @@ const getDefaulters = async (req, res) => {
       };
     });
 
-    // Sort accordingly
     if (sort_by === 'days') {
       defaulters.sort((a, b) => b.overdue_days - a.overdue_days);
     } else if (sort_by === 'amount') {
       defaulters.sort((a, b) => b.overdue_amount - a.overdue_amount);
     } else {
-      // Default: Priority risk score percentage descending
       defaulters.sort((a, b) => b.default_risk_pct - a.default_risk_pct);
     }
 
     return res.status(200).json(defaulters);
-  } catch (error) {
-    console.error('Get defaulters list error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// /api/dashboard/reports
-const getReports = async (req, res) => {
+const getReports = async (req, res, next) => {
   try {
     const { class: classFilter, start_date, end_date } = req.query;
 
-    // Filter rules for transactions
     const txWhere = { status: 'success' };
     if (classFilter) {
       txWhere.student = { class: classFilter };
@@ -265,7 +246,6 @@ const getReports = async (req, res) => {
 
     const totalCollected = txs.reduce((acc, curr) => acc + Number(curr.amount), 0);
 
-    // Filter rules for pending fee assignments
     const pendingWhere = { status: { in: ['pending', 'overdue'] } };
     if (classFilter) {
       pendingWhere.student = { class: classFilter };
@@ -310,9 +290,8 @@ const getReports = async (req, res) => {
       total_pending: totalPending,
       breakdown
     });
-  } catch (error) {
-    console.error('Get reports error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 

@@ -4,49 +4,47 @@ const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { requireConfig } = require('../config/env');
 const { createOtpChallenge, verifyOtpChallenge } = require('../domain/auth/otpService');
+const { AppError, ValidationError, NotFoundError, UnauthorizedError } = require('../errors/AppError');
 
-const loginAttempts = {}; // mobile -> { count, lockUntil }
+const loginAttempts = {};
 
 const LOCKOUT_LIMIT = 5;
-const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_DURATION = 15 * 60 * 1000;
 
-// Signup handler
-const signup = async (req, res) => {
+const signup = async (req, res, next) => {
   try {
     const { name, mobile, email, password, role, studentName, studentClass, studentDob } = req.body;
 
     if (!name || !mobile || !email || !password) {
-      return res.status(400).json({ error: 'All fields are required' });
+      throw new ValidationError('All fields are required');
     }
 
     const requestedRole = role || 'guardian';
     const allowedRoles = ['guardian'];
     if (!allowedRoles.includes(requestedRole)) {
-      return res.status(403).json({ error: 'Staff accounts must be created by an authenticated admin' });
+      throw new AppError('Staff accounts must be created by an authenticated admin', 403);
     }
 
-    // Role restrictions: Cashier creation must be performed by an Admin
     let createdByAdminId = null;
     if (requestedRole === 'cashier') {
-      // Look for Bearer token to check if user is admin
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(403).json({ error: 'Forbidden: Admin must be authenticated to create a cashier' });
+        throw new AppError('Forbidden: Admin must be authenticated to create a cashier', 403);
       }
       try {
         const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, requireConfig().jwtSecret);
         const requester = await prisma.guardian.findUnique({ where: { id: decoded.id } });
         if (!requester || requester.role !== 'admin') {
-          return res.status(403).json({ error: 'Forbidden: Only admins can create cashiers' });
+          throw new AppError('Forbidden: Only admins can create cashiers', 403);
         }
         createdByAdminId = requester.id;
       } catch (err) {
-        return res.status(403).json({ error: 'Forbidden: Invalid admin token' });
+        if (err instanceof AppError) throw err;
+        throw new AppError('Forbidden: Invalid admin token', 403);
       }
     }
 
-    // Check if user already exists
     const existingUser = await prisma.guardian.findFirst({
       where: {
         OR: [
@@ -57,10 +55,9 @@ const signup = async (req, res) => {
     });
 
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this mobile or email already exists' });
+      throw new ValidationError('User with this mobile or email already exists');
     }
 
-    // Enforce single Admin constraint in the system (isolated test runs bypass)
     if (requestedRole === 'admin' && !mobile.startsWith('999999')) {
       const existingAdmin = await prisma.guardian.findFirst({
         where: {
@@ -71,14 +68,12 @@ const signup = async (req, res) => {
         }
       });
       if (existingAdmin) {
-        return res.status(400).json({ error: 'An Admin account already exists. Only one Admin is allowed in the system.' });
+        throw new ValidationError('An Admin account already exists. Only one Admin is allowed in the system.');
       }
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user and nested student
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.guardian.create({
         data: {
@@ -121,13 +116,10 @@ const signup = async (req, res) => {
     const newUser = result.user;
     const student = result.student;
 
-    // Generate token
     const token = jwt.sign({ id: newUser.id, role: newUser.role }, requireConfig().jwtSecret, { expiresIn: '24h' });
 
-    // Remove password hash from response
     const { passwordHash: _, ...userWithoutPassword } = newUser;
 
-    // Log Audit Action
     await logAudit({
       actorId: newUser.id,
       actorRole: newUser.role,
@@ -143,25 +135,19 @@ const signup = async (req, res) => {
       token,
       student
     });
-  } catch (error) {
-    console.error('Signup error:', error);
-    if (error.message && error.message.includes('required for guardian signup')) {
-      return res.status(400).json({ error: error.message });
-    }
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Login (Step 1: Check password and trigger mock OTP)
-const login = async (req, res) => {
+const login = async (req, res, next) => {
   try {
     const { mobile, password } = req.body;
 
     if (!mobile || !password) {
-      return res.status(400).json({ error: 'Mobile and password are required' });
+      throw new ValidationError('Mobile and password are required');
     }
 
-    // Check account lockout
     const attempts = loginAttempts[mobile];
     if (attempts && attempts.count >= LOCKOUT_LIMIT) {
       if (Date.now() < attempts.lockUntil) {
@@ -170,24 +156,20 @@ const login = async (req, res) => {
           error: `Account locked. Please try again after ${minutesLeft} minutes.`
         });
       } else {
-        // Lockout expired, reset attempts
         delete loginAttempts[mobile];
       }
     }
 
-    // Find user
     const user = await prisma.guardian.findUnique({
       where: { mobile }
     });
 
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      throw new UnauthorizedError('Invalid credentials');
     }
 
-    // Validate password
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
-      // Record failed attempt
       if (!loginAttempts[mobile]) {
         loginAttempts[mobile] = { count: 1, lockUntil: 0 };
       } else {
@@ -206,17 +188,14 @@ const login = async (req, res) => {
       });
     }
 
-    // Reset failed attempts on success
     delete loginAttempts[mobile];
 
-    // Generate mock OTP
     const { otp } = await createOtpChallenge({
       mobile,
       intent: 'login',
       payload: { id: user.id, role: user.role }
     });
 
-    // Print to console for verification / testing
     console.log(`\n--- [OTP DEMO] --- \nSMS Sent to: ${mobile}\nOTP Code: ${otp}\nExpires In: 5 minutes\n-------------------\n`);
 
     return res.status(200).json({
@@ -224,28 +203,25 @@ const login = async (req, res) => {
       mobile,
       ...(process.env.NODE_ENV !== 'production' && { otp })
     });
-  } catch (error) {
-    console.error('Login error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Login (Step 2: Verify OTP and return JWT)
-const verifyOTP = async (req, res) => {
+const verifyOTP = async (req, res, next) => {
   try {
     const { mobile, otp } = req.body;
 
     if (!mobile || !otp) {
-      return res.status(400).json({ error: 'Mobile and OTP are required' });
+      throw new ValidationError('Mobile and OTP are required');
     }
 
     const { payload } = await verifyOtpChallenge({ mobile, intent: 'login', otp });
     const user = await prisma.guardian.findUnique({ where: { id: payload.id } });
-    if (!user) return res.status(401).json({ error: 'Unauthorized: User not found' });
+    if (!user) throw new UnauthorizedError('Unauthorized: User not found');
     const token = jwt.sign({ id: user.id, role: user.role }, requireConfig().jwtSecret, { expiresIn: '24h' });
     const { passwordHash: _, ...userWithoutPassword } = user;
 
-    // Log Audit Action
     await logAudit({
       actorId: user.id,
       actorRole: user.role,
@@ -260,19 +236,17 @@ const verifyOTP = async (req, res) => {
       user: userWithoutPassword,
       token
     });
-  } catch (error) {
-    console.error('Verify OTP error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Forgot Password (Step 1: request OTP)
-const forgotPassword = async (req, res) => {
+const forgotPassword = async (req, res, next) => {
   try {
     const { mobile } = req.body;
 
     if (!mobile) {
-      return res.status(400).json({ error: 'Mobile number is required' });
+      throw new ValidationError('Mobile number is required');
     }
 
     const user = await prisma.guardian.findUnique({
@@ -280,8 +254,6 @@ const forgotPassword = async (req, res) => {
     });
 
     if (!user) {
-      // For security, don't expose if the user exists or not, but return OTP sent message.
-      // However, we still print to console only if user exists to prevent fake leaks.
       return res.status(200).json({ message: 'OTP sent if mobile exists' });
     }
 
@@ -294,26 +266,24 @@ const forgotPassword = async (req, res) => {
     console.log(`\n--- [OTP FORGOT PASSWORD] --- \nSMS Sent to: ${mobile}\nOTP Code: ${otp}\nExpires In: 5 minutes\n-----------------------------\n`);
 
     return res.status(200).json({ message: 'OTP sent successfully', mobile, ...(process.env.NODE_ENV !== 'production' && { otp }) });
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Reset Password (Step 2: verify OTP and set new password)
-const resetPassword = async (req, res) => {
+const resetPassword = async (req, res, next) => {
   try {
     const { mobile, otp, newPassword } = req.body;
 
     if (!mobile || !otp || !newPassword) {
-      return res.status(400).json({ error: 'Mobile, OTP and new password are required' });
+      throw new ValidationError('Mobile, OTP and new password are required');
     }
 
     const { payload } = await verifyOtpChallenge({ mobile, intent: 'reset_password', otp });
 
     const user = await prisma.guardian.findUnique({ where: { mobile } });
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      throw new NotFoundError('User');
     }
 
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
@@ -324,7 +294,6 @@ const resetPassword = async (req, res) => {
 
     const { passwordHash: _, ...userWithoutPassword } = updatedUser;
 
-    // Log Audit Log
     await logAudit({
       actorId: user.id,
       actorRole: user.role,
@@ -336,24 +305,21 @@ const resetPassword = async (req, res) => {
     });
 
     return res.status(200).json({ message: 'Password reset successful' });
-  } catch (error) {
-    console.error('Reset password error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// DPDP Consent Submission
-const submitConsent = async (req, res) => {
+const submitConsent = async (req, res, next) => {
   try {
     const { studentId, consent } = req.body;
 
     if (studentId === undefined || consent === undefined) {
-      return res.status(400).json({ error: 'Student ID and consent checkbox are required' });
+      throw new ValidationError('Student ID and consent checkbox are required');
     }
 
     const guardianId = req.user.id;
 
-    // Verify this student belongs to the guardian
     const student = await prisma.student.findFirst({
       where: {
         id: Number(studentId),
@@ -362,7 +328,7 @@ const submitConsent = async (req, res) => {
     });
 
     if (!student) {
-      return res.status(404).json({ error: 'Student not found or access unauthorized' });
+      throw new NotFoundError('Student');
     }
 
     const updatedStudent = await prisma.student.update({
@@ -370,11 +336,10 @@ const submitConsent = async (req, res) => {
       data: {
         consentChecked: consent,
         consentTimestamp: consent ? new Date() : null,
-        status: consent ? 'active' : 'pending' // Update status based on consent
+        status: consent ? 'active' : 'pending'
       }
     });
 
-    // Audit log
     await logAudit({
       actorId: guardianId,
       actorRole: req.user.role,
@@ -390,13 +355,12 @@ const submitConsent = async (req, res) => {
       message: 'DPDP consent status recorded successfully',
       student: updatedStudent
     });
-  } catch (error) {
-    console.error('Submit consent error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const getCashiers = async (req, res) => {
+const getCashiers = async (req, res, next) => {
   try {
     const cashiers = await prisma.cashier.findMany({
       include: {
@@ -417,40 +381,38 @@ const getCashiers = async (req, res) => {
     }));
 
     return res.status(200).json(formatted);
-  } catch (error) {
-    console.error('Get cashiers error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const getAuditLogs = async (req, res) => {
+const getAuditLogs = async (req, res, next) => {
   try {
     const logs = await prisma.auditLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10
     });
     return res.status(200).json(logs);
-  } catch (error) {
-    console.error('Get audit logs error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const createStaff = async (req, res) => {
+const createStaff = async (req, res, next) => {
   try {
     const { name, mobile, email, password, role } = req.body;
     const requestedRole = role || 'cashier';
 
     if (!name || !mobile || !email || !password) {
-      return res.status(400).json({ error: 'name, mobile, email and password are required' });
+      throw new ValidationError('name, mobile, email and password are required');
     }
     if (!['cashier', 'employee'].includes(requestedRole)) {
-      return res.status(400).json({ error: 'Only cashier or employee staff accounts can be created here' });
+      throw new ValidationError('Only cashier or employee staff accounts can be created here');
     }
 
     const existingUser = await prisma.guardian.findFirst({ where: { OR: [{ mobile }, { email }] } });
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this mobile or email already exists' });
+      throw new ValidationError('User with this mobile or email already exists');
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -478,22 +440,20 @@ const createStaff = async (req, res) => {
     });
 
     return res.status(201).json({ user: safeStaff });
-  } catch (error) {
-    console.error('Create staff error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const getMyStudents = async (req, res) => {
+const getMyStudents = async (req, res, next) => {
   try {
     const students = await prisma.student.findMany({
       where: { guardianId: req.user.id },
       include: { kycRecord: true }
     });
     return res.status(200).json(students);
-  } catch (error) {
-    console.error('Get my students error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 

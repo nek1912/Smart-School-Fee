@@ -1,21 +1,19 @@
 const prisma = require('../config/db');
+const { parseStatementCsv, matchStatementRows } = require('../domain/reconciliation/matcher');
+const { ValidationError } = require('../errors/AppError');
 
-// Helper to check if two dates are on the same calendar day (UTC-aligned)
 const isSameDay = (d1, d2) => {
   return d1.getUTCFullYear() === d2.getUTCFullYear() &&
          d1.getUTCMonth() === d2.getUTCMonth() &&
          d1.getUTCDate() === d2.getUTCDate();
 };
 
-const prisma = require('../config/db');
-const { parseStatementCsv, matchStatementRows } = require('../domain/reconciliation/matcher');
-
-const uploadStatement = async (req, res) => {
+const uploadStatement = async (req, res, next) => {
   try {
     const { csvText } = req.body;
 
     if (!csvText) {
-      return res.status(400).json({ error: 'csvText body parameter is required' });
+      throw new ValidationError('csvText body parameter is required');
     }
 
     const rows = parseStatementCsv(csvText);
@@ -63,9 +61,8 @@ const uploadStatement = async (req, res) => {
       unmatched: unmatched.map(item => ({ amount: item.row.amount, reference: item.row.reference, reason: item.reason }))
     });
 
-  } catch (error) {
-    console.error('Upload statement error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
