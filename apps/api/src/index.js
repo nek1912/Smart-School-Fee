@@ -58,6 +58,7 @@ app.post('/api/auth/login', authRateLimiter, authController.login);
 app.post('/api/auth/verify-otp', authRateLimiter, authController.verifyOTP);
 app.post('/api/auth/forgot-password', authRateLimiter, authController.forgotPassword);
 app.post('/api/auth/reset-password', authRateLimiter, authController.resetPassword);
+app.post('/api/auth/refresh-token', authRateLimiter, authController.refreshToken);
 
 // DPDP Consent Endpoint (Requires guardian authentication)
 app.post(
@@ -73,6 +74,12 @@ app.get(
   authenticate,
   checkRole(['guardian', 'admin']),
   authController.getMyStudents
+);
+app.post(
+  '/api/guardians/students',
+  authenticate,
+  checkRole(['guardian', 'admin']),
+  authController.addStudent
 );
 
 // Protected Admin Testing Route (RBAC verification)
@@ -185,6 +192,13 @@ app.post(
   checkRole(['admin']),
   auditLogger('student', 'override_kyc'),
   kycController.overrideKYC
+);
+app.post(
+  '/api/admin/approvals/:studentId/reject',
+  authenticate,
+  checkRole(['admin']),
+  auditLogger('student', 'reject_student'),
+  kycController.rejectStudent
 );
 
 // === PAYMENTS & TRANSACTIONS ROUTES ===

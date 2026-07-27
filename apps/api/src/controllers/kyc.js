@@ -112,8 +112,7 @@ const getPendingApprovals = async (req, res, next) => {
   try {
     const pending = await prisma.student.findMany({
       where: {
-        status: 'pending',
-        kycRecord: { isNot: null }
+        status: 'pending'
       },
       include: {
         guardian: {
@@ -143,8 +142,8 @@ const approveKYC = async (req, res, next) => {
       include: { kycRecord: true }
     });
 
-    if (!student || !student.kycRecord) {
-      throw new NotFoundError('Student or student KYC details');
+    if (!student) {
+      throw new NotFoundError('Student');
     }
 
     const updatedStudent = await prisma.$transaction(async (tx) => {
@@ -156,13 +155,15 @@ const approveKYC = async (req, res, next) => {
         }
       });
 
-      await tx.studentKYC.update({
-        where: { studentId: Number(studentId) },
-        data: {
-          verifiedAt: new Date(),
-          ocrFlagged: false
-        }
-      });
+      if (student.kycRecord) {
+        await tx.studentKYC.update({
+          where: { studentId: Number(studentId) },
+          data: {
+            verifiedAt: new Date(),
+            ocrFlagged: false
+          }
+        });
+      }
 
       const feeStructures = await tx.feeStructure.findMany({
         where: {
@@ -230,8 +231,8 @@ const overrideKYC = async (req, res, next) => {
       include: { kycRecord: true }
     });
 
-    if (!student || !student.kycRecord) {
-      throw new NotFoundError('Student or student KYC details');
+    if (!student) {
+      throw new NotFoundError('Student');
     }
 
     const updatedStudent = await prisma.$transaction(async (tx) => {
@@ -246,13 +247,15 @@ const overrideKYC = async (req, res, next) => {
         }
       });
 
-      await tx.studentKYC.update({
-        where: { studentId: Number(studentId) },
-        data: {
-          verifiedAt: new Date(),
-          ocrFlagged: false
-        }
-      });
+      if (student.kycRecord) {
+        await tx.studentKYC.update({
+          where: { studentId: Number(studentId) },
+          data: {
+            verifiedAt: new Date(),
+            ocrFlagged: false
+          }
+        });
+      }
 
       const feeStructures = await tx.feeStructure.findMany({
         where: {
@@ -372,11 +375,50 @@ const getAllStudents = async (req, res, next) => {
   }
 };
 
+const rejectStudent = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const { reason } = req.body;
+
+    const student = await prisma.student.findUnique({
+      where: { id: Number(studentId) }
+    });
+
+    if (!student) {
+      throw new NotFoundError('Student');
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: Number(studentId) },
+      data: { status: 'rejected' }
+    });
+
+    await logAudit({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'reject_student',
+      entity: 'student',
+      entityId: student.id,
+      before: { id: student.id, status: student.status },
+      after: { id: updated.id, status: updated.status }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Student registration rejected',
+      student: updated
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   submitKYC,
   getPendingApprovals,
   approveKYC,
   overrideKYC,
   getAllStudents,
-  submitStage2KYC
+  submitStage2KYC,
+  rejectStudent
 };

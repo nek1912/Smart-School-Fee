@@ -36,6 +36,19 @@ const initiateRefund = async (req, res, next) => {
       throw new ValidationError('Banking details required for refund. Please collect Stage 2 KYC.');
     }
 
+    const existingRefund = await prisma.transaction.findFirst({
+      where: {
+        feeAssignmentId: originalTx.feeAssignmentId,
+        method: 'REVERSAL',
+        status: 'reversed',
+        gatewayRef: `REFUND_${originalTx.id}`
+      }
+    });
+
+    if (existingRefund) {
+      throw new ValidationError('A refund has already been processed for this transaction');
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const currentYear = new Date().getFullYear();
       const lastRef = await tx.transaction.findFirst({
@@ -65,7 +78,7 @@ const initiateRefund = async (req, res, next) => {
           status: 'reversed',
           gatewayRef: `REFUND_${originalTx.id}`,
           receiptNumber,
-          idempotencyKey: `refund_${originalTx.id}_${Date.now()}`
+          idempotencyKey: `refund_${originalTx.id}`
         }
       });
 

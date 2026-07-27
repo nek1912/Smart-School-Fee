@@ -7,7 +7,7 @@ export default function Reports() {
   const [endDate, setEndDate] = useState('');
 
   // Fetch real report data
-  const { data: report, loading } = useDashboardQuery('/api/dashboard/reports', {
+  const { data: report, loading, error } = useDashboardQuery('/api/dashboard/reports', {
     class: classFilter,
     start_date: startDate,
     end_date: endDate
@@ -122,6 +122,11 @@ export default function Reports() {
         </div>
       </div>
 
+      {error && (
+        <div className="alert alert-error" style={{ margin: '20px 0' }}>
+          Failed to load report data: {error}
+        </div>
+      )}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b', fontSize: '0.85rem' }}>
           Generating report data...
@@ -130,7 +135,7 @@ export default function Reports() {
         <div className="layout-stack-md">
           
           {/* Summary Metric Cards */}
-          <div className="grid-2">
+          <div className="grid-3">
             <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', padding: '20px', borderRadius: '12px' }}>
               <span style={{ fontSize: '0.75rem', color: '#047857', fontWeight: 600, textTransform: 'uppercase' }}>
                 Total Revenue Collected
@@ -141,9 +146,27 @@ export default function Reports() {
             </div>
             <div style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.15)', padding: '20px', borderRadius: '12px' }}>
               <span style={{ fontSize: '0.75rem', color: '#be123c', fontWeight: 600, textTransform: 'uppercase' }}>
-                Total Pending Balances
+                Total Refunded
               </span>
               <p style={{ fontSize: '1.5rem', fontWeight: 800, margin: '8px 0 0 0', color: '#9f1239' }}>
+                ₹{Number(report?.total_refunded || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.15)', padding: '20px', borderRadius: '12px' }}>
+              <span style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: 600, textTransform: 'uppercase' }}>
+                Net Collections
+              </span>
+              <p style={{ fontSize: '1.5rem', fontWeight: 800, margin: '8px 0 0 0', color: '#92400e' }}>
+                ₹{Number(report?.net_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+          <div className="grid-2" style={{ marginTop: '15px' }}>
+            <div style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '20px', borderRadius: '12px' }}>
+              <span style={{ fontSize: '0.75rem', color: '#4338ca', fontWeight: 600, textTransform: 'uppercase' }}>
+                Total Pending Balances
+              </span>
+              <p style={{ fontSize: '1.5rem', fontWeight: 800, margin: '8px 0 0 0', color: '#3730a3' }}>
                 ₹{Number(report?.total_pending || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </p>
             </div>

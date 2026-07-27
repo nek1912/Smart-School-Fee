@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import PaymentButton from '../../components/common/PaymentButton';
+import AddWard from './AddWard';
 
 export default function Payment() {
   const [students, setStudents] = useState([]);
@@ -8,6 +9,7 @@ export default function Payment() {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showAddWard, setShowAddWard] = useState(false);
 
   // 1. Fetch wards
   useEffect(() => {
@@ -107,6 +109,18 @@ export default function Payment() {
             ))}
           </div>
         )}
+        {students.length > 0 && (
+          <div style={{ marginTop: '15px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '8px 20px', fontSize: '0.85rem' }}
+              onClick={() => setShowAddWard(true)}
+            >
+              + Add Ward
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Outstanding Fees Panel */}
@@ -158,6 +172,20 @@ export default function Payment() {
                         </td>
                         <td style={{ padding: '15px', fontWeight: 700, color: 'white' }}>
                           ₹{Number(adjustedAmount(asg)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {asg.waiverPenalties?.length > 0 && (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400, marginTop: '2px' }}>
+                              {asg.waiverPenalties.filter(w => w.status === 'approved').map(w => (
+                                <span key={w.id} style={{ color: w.type === 'penalty' ? '#f87171' : '#34d399', display: 'block' }}>
+                                  {w.type === 'penalty' ? '+' : '-'}₹{Number(w.amount).toLocaleString('en-IN')} ({w.type})
+                                </span>
+                              ))}
+                              {asg.waiverPenalties.some(w => w.status === 'pending') && (
+                                <span style={{ color: '#fbbf24', display: 'block' }}>
+                                  {asg.waiverPenalties.filter(w => w.status === 'pending').length} pending adjustment(s)
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '15px', color: isOverdue ? 'var(--error)' : 'var(--text-secondary)' }}>
                           {new Date(asg.dueDate).toLocaleDateString()} {isOverdue && '(Overdue)'}
@@ -194,6 +222,14 @@ export default function Payment() {
           )}
         </div>
       )}
+      <AddWard
+        show={showAddWard}
+        onClose={() => setShowAddWard(false)}
+        onSuccess={async () => {
+          const res = await api.get('/guardians/students');
+          setStudents(res.data);
+        }}
+      />
     </div>
   );
 }

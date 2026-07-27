@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { generateReceiptBase64 } = require('./payments');
+const { generateReceiptBase64 } = require('../utils/receipts');
 const { NotFoundError, ValidationError } = require('../errors/AppError');
 
 const getCheques = async (req, res, next) => {

@@ -10,6 +10,35 @@ const assertAssignmentPayable = (assignment) => {
   }
 };
 
+const assertNoPendingTransaction = async (tx, feeAssignmentId) => {
+  const pending = await tx.transaction.findFirst({
+    where: {
+      feeAssignmentId,
+      status: { in: ['pending', 'success'] }
+    },
+    include: { chequeRecords: true }
+  });
+  if (!pending) return;
+
+  if (pending.status === 'success') {
+    throw Object.assign(new Error('This fee component has already been paid'), { statusCode: 400 });
+  }
+
+  if (pending.method === 'CHEQUE' && pending.chequeRecords?.[0]?.depositStatus === 'deposit_pending') {
+    await tx.transaction.update({
+      where: { id: pending.id },
+      data: { status: 'failed' }
+    });
+    await tx.chequeRecord.updateMany({
+      where: { transactionId: pending.id },
+      data: { depositStatus: 'cancelled' }
+    });
+    return;
+  }
+
+  throw Object.assign(new Error('A payment is already being processed for this fee component'), { statusCode: 400 });
+};
+
 const loadAssignment = (tx, feeAssignmentId) => tx.feeAssignment.findUnique({
   where: { id: Number(feeAssignmentId) },
   include: { student: { include: { guardian: true } }, feeStructure: true }
@@ -22,6 +51,7 @@ const collectCash = async ({ feeAssignmentId, amount, idempotencyKey, actorId, a
   return prisma.$transaction(async (tx) => {
     const assignment = await loadAssignment(tx, feeAssignmentId);
     assertAssignmentPayable(assignment);
+    await assertNoPendingTransaction(tx, assignment.id);
     const paymentAmount = Number(amount || assignment.feeStructure.amount);
     const transaction = await tx.transaction.create({
       data: {
@@ -76,6 +106,7 @@ const collectCheque = async ({ feeAssignmentId, amount, chequeNo, bank, idempote
   return prisma.$transaction(async (tx) => {
     const assignment = await loadAssignment(tx, feeAssignmentId);
     assertAssignmentPayable(assignment);
+    await assertNoPendingTransaction(tx, assignment.id);
     const paymentAmount = Number(amount || assignment.feeStructure.amount);
     const transaction = await tx.transaction.create({
       data: {
@@ -113,6 +144,13 @@ const markUpiSuccess = async ({ orderId, gatewayTxnId, actorId = null }) => {
     });
     if (!transaction) throw Object.assign(new Error('Transaction reference not found'), { statusCode: 404 });
     if (transaction.status === 'success') return transaction;
+
+    const existingReceipt = await tx.receipt.findUnique({
+      where: { transactionId: transaction.id }
+    });
+    if (existingReceipt) {
+      return { ...transaction, receiptNumber: existingReceipt.receiptNumber };
+    }
 
     const updated = await tx.transaction.update({
       where: { id: transaction.id },

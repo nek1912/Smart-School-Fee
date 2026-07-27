@@ -1,18 +1,28 @@
 const prisma = require('../../config/db');
 
 const getReportData = async (classFilter, startDate, endDate) => {
-  const txWhere = { status: 'success' };
-  if (classFilter) txWhere.student = { class: classFilter };
-  if (startDate && endDate) {
-    txWhere.createdAt = { gte: new Date(startDate), lte: new Date(endDate) };
-  }
+  const txnFilter = (status) => {
+    const w = { status };
+    const sw = {};
+    if (classFilter) sw.class = classFilter;
+    if (classFilter || (startDate && endDate)) w.student = { ...sw };
+    if (startDate && endDate) w.createdAt = { gte: new Date(startDate), lte: new Date(endDate) };
+    return w;
+  };
 
-  const txs = await prisma.transaction.findMany({
-    where: txWhere,
-    include: { feeAssignment: { include: { feeStructure: true } } }
-  });
+  const [successTxs, reversedTxs] = await Promise.all([
+    prisma.transaction.findMany({
+      where: txnFilter('success'),
+      include: { feeAssignment: { include: { feeStructure: true } }, student: true }
+    }),
+    prisma.transaction.findMany({
+      where: txnFilter('reversed'),
+      include: { feeAssignment: { include: { feeStructure: true } }, student: true }
+    })
+  ]);
 
-  const totalCollected = txs.reduce((acc, curr) => acc + Number(curr.amount), 0);
+  const totalCollected = successTxs.reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
+  const totalRefunded = reversedTxs.reduce((acc, curr) => acc + Math.abs(Number(curr.amount)), 0);
 
   const pendingWhere = { status: { in: ['pending', 'overdue'] } };
   if (classFilter) pendingWhere.student = { class: classFilter };
@@ -35,14 +45,14 @@ const getReportData = async (classFilter, startDate, endDate) => {
   }, 0);
 
   const breakdownObj = {};
-  txs.forEach(t => {
-    const type = t.feeAssignment.feeStructure.type;
-    breakdownObj[type] = (breakdownObj[type] || 0) + Number(t.amount);
+  successTxs.forEach(t => {
+    const type = t.feeAssignment?.feeStructure?.type || 'other';
+    breakdownObj[type] = (breakdownObj[type] || 0) + Math.abs(Number(t.amount));
   });
 
   const breakdown = Object.entries(breakdownObj).map(([type, total]) => ({ type, total }));
 
-  return { total_collected: totalCollected, total_pending: totalPending, breakdown };
+  return { total_collected: totalCollected, total_refunded: totalRefunded, net_collected: totalCollected - totalRefunded, total_pending: totalPending, breakdown };
 };
 
 module.exports = { getReportData };

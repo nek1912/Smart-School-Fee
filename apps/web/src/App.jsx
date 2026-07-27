@@ -21,6 +21,7 @@ import OfflineQueue from './pages/cashier/OfflineQueue';
 import Deposits from './pages/cashier/Deposits';
 import Reconciliation from './pages/admin/Reconciliation';
 import Dashboard from './pages/admin/Dashboard';
+import Reports from './pages/admin/Reports';
 import Expenses from './pages/admin/Expenses';
 
 export default function App() {
@@ -387,6 +388,7 @@ export default function App() {
               {adminTab === 'dashboard' && <Dashboard setAdminTab={setAdminTab} />}
               {adminTab === 'fees' && <FeeSetup />}
               {adminTab === 'approvals' && <Approvals />}
+              {adminTab === 'reports' && <Reports />}
               {adminTab === 'reconciliation' && <Reconciliation />}
               {adminTab === 'expenses' && <Expenses />}
 

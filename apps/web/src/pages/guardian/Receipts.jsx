@@ -73,8 +73,9 @@ export default function Receipts() {
     }
   };
 
-  // Filter out pending/failed transactions for receipt list (only show success or reversed)
-  const successfulTxns = transactions.filter(t => t.status === 'success' || t.status === 'reversed');
+  // Show only successful payments (reversal entries omitted — refund status shown on original)
+  const allTxns = transactions;
+  const successfulTxns = transactions.filter(t => t.status === 'success');
 
   return (
     <div className="glass-panel panel-padded">
@@ -129,54 +130,64 @@ export default function Receipts() {
               </tr>
             </thead>
             <tbody>
-              {successfulTxns.map((tx) => (
-                <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                  <td style={{ padding: '15px', fontWeight: '700', color: tx.status === 'reversed' ? 'var(--error)' : 'var(--secondary)', fontFamily: 'monospace' }}>
-                    {tx.receiptNumber}
-                  </td>
-                  <td style={{ padding: '15px', color: 'var(--text-secondary)' }}>
-                    {new Date(tx.createdAt).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: '15px', fontWeight: 500 }}>{tx.student.name}</td>
-                  <td style={{ padding: '15px', color: 'var(--text-secondary)' }}>
-                    {tx.feeAssignment.feeStructure.name}
-                  </td>
-                  <td style={{ padding: '15px' }}>
-                    <span className="badge" style={{ fontSize: '0.65rem', padding: '2px 6px', background: tx.status === 'reversed' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)', color: tx.status === 'reversed' ? 'var(--error)' : 'white' }}>
-                      {tx.method}
-                    </span>
-                  </td>
-                  <td style={{ padding: '15px', fontWeight: 700, color: tx.status === 'reversed' ? 'var(--error)' : 'var(--success)' }}>
-                    {tx.status === 'reversed' ? '-' : ''}₹{Number(tx.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td style={{ padding: '15px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => handleDownloadReceipt(tx.id, tx.receiptNumber)}
-                      >
-                        Download PDF
-                      </button>
-                      {tx.status === 'success' && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          style={{ border: '1px solid var(--error)', color: 'var(--error)' }}
-                          onClick={() => handleRequestRefund(tx)}
-                        >
-                          Request Refund
-                        </button>
-                      )}
-                      {tx.status === 'reversed' && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--error)', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>
-                          Refunded
+              {(() => {
+                const refundedFeeIds = new Set(
+                  allTxns
+                    .filter(t => t.status === 'reversed')
+                    .map(t => t.feeAssignmentId)
+                );
+                return successfulTxns.map((tx) => {
+                  const alreadyRefunded = tx.status === 'success' && refundedFeeIds.has(tx.feeAssignmentId);
+                  return (
+                    <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <td style={{ padding: '15px', fontWeight: '700', color: alreadyRefunded ? 'var(--error)' : 'var(--secondary)', fontFamily: 'monospace' }}>
+                        {tx.receiptNumber}
+                      </td>
+                      <td style={{ padding: '15px', color: 'var(--text-secondary)' }}>
+                        {new Date(tx.createdAt).toLocaleDateString()}
+                      </td>
+                      <td style={{ padding: '15px', fontWeight: 500 }}>{tx.student.name}</td>
+                      <td style={{ padding: '15px', color: 'var(--text-secondary)' }}>
+                        {tx.feeAssignment.feeStructure.name}
+                      </td>
+                      <td style={{ padding: '15px' }}>
+                        <span className="badge" style={{ fontSize: '0.65rem', padding: '2px 6px', background: alreadyRefunded ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)', color: alreadyRefunded ? 'var(--error)' : 'white' }}>
+                          {tx.method}
                         </span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </td>
+                      <td style={{ padding: '15px', fontWeight: 700, color: alreadyRefunded ? 'var(--error)' : 'var(--success)' }}>
+                        ₹{Math.abs(Number(tx.amount)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ padding: '15px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => handleDownloadReceipt(tx.id, tx.receiptNumber)}
+                          >
+                            Download PDF
+                          </button>
+                          {!alreadyRefunded && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ border: '1px solid var(--error)', color: 'var(--error)' }}
+                              onClick={() => handleRequestRefund(tx)}
+                            >
+                              Request Refund
+                            </button>
+                          )}
+                          {alreadyRefunded && (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--error)', fontStyle: 'italic', display: 'flex', alignItems: 'center' }}>
+                              Refunded
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>

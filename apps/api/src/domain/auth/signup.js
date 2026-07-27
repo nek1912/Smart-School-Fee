@@ -41,7 +41,7 @@ const signupUser = async (data) => {
   });
 
   if (existingUser) {
-    throw new ValidationError('User with this mobile or email already exists');
+    return { exists: true, message: 'An account with this mobile or email already exists. Please log in or add a new ward from your dashboard.' };
   }
 
   if (requestedRole === 'admin' && !mobile.startsWith('999999')) {

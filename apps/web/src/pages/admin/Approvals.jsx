@@ -24,6 +24,9 @@ export default function Approvals() {
   const [rejectId, setRejectId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  const [studentRejectId, setStudentRejectId] = useState(null);
+  const [studentRejectReason, setStudentRejectReason] = useState('');
+
   // Refund dialog states
   const [refundTxId, setRefundTxId] = useState(null);
   const [refundReason, setRefundReason] = useState('');
@@ -116,6 +119,26 @@ export default function Approvals() {
 
   const handleCloseOverride = () => {
     setOverrideStudentId(null);
+  };
+
+  const handleRejectStudent = async () => {
+    if (!studentRejectReason.trim()) return;
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.post(`/api/admin/approvals/${studentRejectId}/reject`, { reason: studentRejectReason }, { headers });
+      setSuccess('Student registration rejected.');
+      setStudentRejectId(null);
+      setStudentRejectReason('');
+      fetchPending();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to reject student.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOverrideSubmit = async (e) => {
@@ -401,6 +424,14 @@ export default function Approvals() {
                           >
                             Manual Override
                           </button>
+                          <button 
+                            className="btn btn-sm"
+                            style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                            onClick={() => { setStudentRejectId(student.id); setStudentRejectReason(''); }}
+                            disabled={loading}
+                          >
+                            Reject
+                          </button>
                         </div>
                       )}
                     </div>
@@ -457,6 +488,27 @@ export default function Approvals() {
                             </button>
                           </div>
                         </form>
+                      </div>
+                    )}
+
+                    {studentRejectId === student.id && (
+                      <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+                        <p style={{ fontSize: '0.85rem', marginBottom: '10px', color: '#f87171' }}>Reason for rejection:</p>
+                        <textarea
+                          className="form-input"
+                          style={{ width: '100%', minHeight: '60px', marginBottom: '10px' }}
+                          value={studentRejectReason}
+                          onChange={(e) => setStudentRejectReason(e.target.value)}
+                          placeholder="Enter rejection reason..."
+                        />
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button className="btn btn-sm" style={{ background: 'rgba(239, 68, 68, 0.8)', color: 'white' }} onClick={handleRejectStudent} disabled={loading || !studentRejectReason.trim()}>
+                            {loading ? 'Rejecting...' : 'Confirm Reject'}
+                          </button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setStudentRejectId(null)}>
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -549,52 +601,61 @@ export default function Approvals() {
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map(tx => {
-                    const studentMatch = students.find(s => s.id === tx.studentId);
-                    const hasKyc = studentMatch?.kycRecord?.isBankingComplete;
-                    
-                    return (
-                      <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                        <td style={{ padding: '12px', fontWeight: '700', fontFamily: 'monospace' }}>
-                          {tx.receiptNumber}
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <strong>{tx.student.name}</strong> ({tx.student.class})
-                        </td>
-                        <td style={{ padding: '12px', fontWeight: 700 }}>
-                          {tx.status === 'reversed' ? '-' : ''}₹{Number(tx.amount).toLocaleString('en-IN')}
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <span className={`badge ${hasKyc ? 'badge-active' : 'badge-flagged'}`} style={{ fontSize: '0.65rem' }}>
-                            {hasKyc ? 'COMPLETE' : 'MISSING DETAILS'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'right' }}>
-                          {tx.status === 'reversed' ? (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--error)', fontStyle: 'italic' }}>
-                              Reversed
-                            </span>
-                          ) : (
-                            <button
-                              className="btn btn-secondary"
-                              style={{ 
-                                padding: '6px 12px', 
-                                fontSize: '0.75rem', 
-                                border: '1px solid var(--error)', 
-                                color: 'var(--error)',
-                                opacity: hasKyc ? 1 : 0.5 
-                              }}
-                              onClick={() => handleOpenRefund(tx.id)}
-                              disabled={!hasKyc || loading}
-                              title={hasKyc ? 'Process refund reversal' : 'Awaiting guardian Stage 2 bank details'}
-                            >
-                              Refund Reversal
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                  {(() => {
+                    const refundedFeeIds = new Set(
+                      transactions
+                        .filter(t => t.status === 'reversed')
+                        .map(t => t.feeAssignmentId)
                     );
-                  })}
+                    const successTxs = transactions.filter(t => t.status === 'success');
+                    return successTxs.map(tx => {
+                      const studentMatch = students.find(s => s.id === tx.studentId);
+                      const hasKyc = studentMatch?.kycRecord?.isBankingComplete;
+                      const alreadyRefunded = refundedFeeIds.has(tx.feeAssignmentId);
+                      
+                      return (
+                        <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                          <td style={{ padding: '12px', fontWeight: '700', fontFamily: 'monospace' }}>
+                            {tx.receiptNumber}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <strong>{tx.student.name}</strong> ({tx.student.class})
+                          </td>
+                          <td style={{ padding: '12px', fontWeight: 700 }}>
+                            ₹{Math.abs(Number(tx.amount)).toLocaleString('en-IN')}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <span className={`badge ${hasKyc ? 'badge-active' : 'badge-flagged'}`} style={{ fontSize: '0.65rem' }}>
+                              {hasKyc ? 'COMPLETE' : 'MISSING DETAILS'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            {alreadyRefunded ? (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                Refunded
+                              </span>
+                            ) : (
+                              <button
+                                className="btn btn-secondary"
+                                style={{ 
+                                  padding: '6px 12px', 
+                                  fontSize: '0.75rem', 
+                                  border: '1px solid var(--error)', 
+                                  color: 'var(--error)',
+                                  opacity: hasKyc ? 1 : 0.5 
+                                }}
+                                onClick={() => handleOpenRefund(tx.id)}
+                                disabled={!hasKyc || loading}
+                                title={hasKyc ? 'Process refund reversal' : 'Awaiting guardian Stage 2 bank details'}
+                              >
+                                Refund Reversal
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>

@@ -1,4 +1,6 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { requireConfig } = require('../config/env');
 const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { generateToken } = require('../domain/auth/tokens');
@@ -13,6 +15,9 @@ const signup = async (req, res, next) => {
       name, mobile, email, password, role, studentName, studentClass, studentDob,
       authHeader: req.headers.authorization
     });
+    if (result.exists) {
+      return res.status(409).json(result);
+    }
     return res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -227,6 +232,54 @@ const getMyStudents = async (req, res, next) => {
   }
 };
 
+const refreshToken = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    const secret = requireConfig().jwtSecret;
+    const decoded = jwt.verify(token, secret, { ignoreExpiration: true });
+    const user = await prisma.guardian.findUnique({ where: { id: decoded.id } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    const newToken = generateToken(user);
+    return res.json({ token: newToken });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const addStudent = async (req, res, next) => {
+  try {
+    const { name, class: studentClass, dob } = req.body;
+    if (!name || !studentClass || !dob) {
+      throw new ValidationError('name, class, and dob are required');
+    }
+    const student = await prisma.student.create({
+      data: {
+        guardianId: req.user.id,
+        name,
+        class: studentClass,
+        dob: new Date(dob),
+        status: 'pending',
+        consentChecked: true,
+        consentTimestamp: new Date()
+      }
+    });
+    await logAudit({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'add_student',
+      entity: 'student',
+      entityId: student.id,
+      before: null,
+      after: { id: student.id, name: student.name }
+    });
+    return res.status(201).json({ student });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   signup,
   login,
@@ -237,5 +290,7 @@ module.exports = {
   getCashiers,
   getAuditLogs,
   getMyStudents,
-  createStaff
+  createStaff,
+  refreshToken,
+  addStudent
 };

@@ -10,6 +10,60 @@ const { ValidationError, NotFoundError, AppError } = require('../errors/AppError
 
 const canAutoPromoteMockPayment = (nodeEnv) => nodeEnv !== 'production';
 
+const adjustedAmount = (assignment) => {
+  const base = Number(assignment.feeStructure.amount);
+  return (assignment.waiverPenalties || []).reduce((total, item) => {
+    if (item.status !== 'approved') return total;
+    return item.type === 'penalty' ? total + Number(item.amount) : total - Number(item.amount);
+  }, base);
+};
+
+const resolvePendingTransaction = async (assignmentId) => {
+  const pendingTx = await prisma.transaction.findFirst({
+    where: {
+      feeAssignmentId: assignmentId,
+      status: { in: ['pending', 'success'] }
+    },
+    include: { chequeRecords: true }
+  });
+  if (!pendingTx) return null;
+
+  if (pendingTx.status === 'success') {
+    throw new ValidationError('This fee component has already been paid');
+  }
+
+  const isCheque = pendingTx.method === 'CHEQUE';
+  const hasCheque = pendingTx.chequeRecords?.[0];
+  const hasDepositPending = hasCheque && ['deposit_pending', 'bank_pending'].includes(hasCheque.depositStatus);
+  const hasLongOverdue = new Date(pendingTx.createdAt) < new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h old
+
+  if (isCheque && hasLongOverdue) {
+    await prisma.transaction.update({
+      where: { id: pendingTx.id },
+      data: { status: 'failed' }
+    });
+    await prisma.chequeRecord.updateMany({
+      where: { transactionId: pendingTx.id },
+      data: { depositStatus: 'cancelled' }
+    });
+    return null;
+  }
+
+  if (isCheque && hasDepositPending && hasLongOverdue) {
+    await prisma.transaction.update({
+      where: { id: pendingTx.id },
+      data: { status: 'failed' }
+    });
+    await prisma.chequeRecord.updateMany({
+      where: { transactionId: pendingTx.id },
+      data: { depositStatus: 'cancelled' }
+    });
+    return null;
+  }
+
+  throw new ValidationError('A payment is already being processed for this fee component');
+};
+
 const initiatePayment = async (req, res, next) => {
   try {
     const { feeAssignmentId, method, idempotencyKey } = req.body;
@@ -36,7 +90,8 @@ const initiatePayment = async (req, res, next) => {
         student: {
           include: { guardian: true }
         },
-        feeStructure: true
+        feeStructure: true,
+        waiverPenalties: true
       }
     });
 
@@ -48,12 +103,14 @@ const initiatePayment = async (req, res, next) => {
       throw new ValidationError('This fee component is already fully paid');
     }
 
+    await resolvePendingTransaction(assignment.id);
+
     if (assignment.student.guardianId !== guardianId) {
       throw new AppError('Unauthorized ward lookup', 403);
     }
 
     const orderId = `ORD_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
-    const amount = Number(assignment.feeStructure.amount);
+    const amount = adjustedAmount(assignment);
 
     const transaction = await prisma.transaction.create({
       data: {
@@ -299,7 +356,7 @@ const getTransactions = async (req, res, next) => {
 
 const collectManual = async (req, res, next) => {
   try {
-    const { feeAssignmentId, method, chequeNo, bank, deposited } = req.body;
+    const { feeAssignmentId, method, chequeNo, bank, deposited, amount: requestedAmount } = req.body;
     const cashierId = req.user.id;
 
     if (!feeAssignmentId || !method) {
@@ -318,7 +375,8 @@ const collectManual = async (req, res, next) => {
       where: { id: Number(feeAssignmentId) },
       include: {
         student: { include: { guardian: true } },
-        feeStructure: true
+        feeStructure: true,
+        waiverPenalties: true
       }
     });
 
@@ -330,11 +388,13 @@ const collectManual = async (req, res, next) => {
       throw new ValidationError('Fee component is already paid');
     }
 
-    const amount = Number(assignment.feeStructure.amount);
+    await resolvePendingTransaction(assignment.id);
+
+    const amount = requestedAmount || adjustedAmount(assignment);
     const idempotencyKey = req.body.idempotencyKey || `MAN_${feeAssignmentId}_${method}_${Date.now()}`;
     const transaction = method === 'CASH'
-      ? await collectCash({ feeAssignmentId, amount: req.body.amount, idempotencyKey, actorId: req.user.id, actorRole: req.user.role, deposited })
-      : await collectCheque({ feeAssignmentId, amount: req.body.amount, chequeNo, bank, idempotencyKey, actorId: req.user.id, actorRole: req.user.role });
+      ? await collectCash({ feeAssignmentId, amount, idempotencyKey, actorId: req.user.id, actorRole: req.user.role, deposited })
+      : await collectCheque({ feeAssignmentId, amount, chequeNo, bank, idempotencyKey, actorId: req.user.id, actorRole: req.user.role });
 
     return res.status(201).json({ success: true, message: `${method} payment logged successfully`, transaction });
 
