@@ -30,6 +30,7 @@ export default function Signup({ onNavigate }) {
   const [consentChecked, setConsentChecked] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [apiError, setApiError] = useState(null);
+  const [showExistingAccountOptions, setShowExistingAccountOptions] = useState(false);
 
   useEffect(() => {
     clearAlerts();
@@ -175,7 +176,12 @@ export default function Signup({ onNavigate }) {
         onNavigate('dashboard');
       }, 1000);
     } catch (err) {
-      setApiError(err.response?.data?.error || 'Signup registration failed.');
+      if (err.response?.status === 409) {
+        setApiError(err.response.data.message);
+        setShowExistingAccountOptions(true);
+      } else {
+        setApiError(err.response?.data?.error || 'Signup registration failed.');
+      }
     }
   };
 
@@ -194,6 +200,17 @@ export default function Signup({ onNavigate }) {
 
         {(authError || apiError) && <div className="alert alert-error">{authError || apiError}</div>}
         {successMessage && <div className="alert alert-success">{successMessage}</div>}
+
+        {showExistingAccountOptions && (
+          <div style={{ marginTop: '10px', marginBottom: '20px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
+            <button className="btn" onClick={() => onNavigate('login')}>
+              Log In Instead
+            </button>
+            <button className="btn btn-secondary" onClick={() => onNavigate('payment')}>
+              Add a New Ward (Child)
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           

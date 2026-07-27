@@ -106,13 +106,13 @@ export default function OfflineQueue() {
       )}
 
       {queue.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+        <div className="empty-state" style={{ color: '#94a3b8' }}>
           ✓ All collections are in sync. Local queue is empty!
         </div>
       ) : (
         <>
-          <div style={{ overflowX: 'auto', marginBottom: '20px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
+          <div className="overflow-table" style={{ marginBottom: '20px' }}>
+            <table className="table-base" style={{ fontSize: '0.825rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--glass-border)', color: '#cbd5e1' }}>
                   <th style={{ padding: '12px' }}>Method</th>
@@ -147,8 +147,7 @@ export default function OfflineQueue() {
           <button
             onClick={triggerSync}
             disabled={syncing || !onlineStatus}
-            className="btn"
-            style={{ width: '100%' }}
+            className="btn w-full"
           >
             {syncing ? 'Synchronizing Payments...' : 'Sync Queued Payments with Server'}
           </button>

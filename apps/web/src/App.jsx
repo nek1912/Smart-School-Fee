@@ -8,7 +8,12 @@ import Approvals from './pages/admin/Approvals';
 import Payment from './pages/guardian/Payment';
 import PaymentSuccess from './pages/guardian/PaymentSuccess';
 import Receipts from './pages/guardian/Receipts';
-import axios from 'axios';
+import { api } from './api/client';
+import AppShell from './components/layout/AppShell';
+import RoleNav from './components/layout/RoleNav';
+import StatusBadge from './components/common/StatusBadge';
+import EmptyState from './components/common/EmptyState';
+import ErrorState from './components/common/ErrorState';
 
 // Cashier & Reconciliation imports
 import Collections from './pages/cashier/Collections';
@@ -16,6 +21,7 @@ import OfflineQueue from './pages/cashier/OfflineQueue';
 import Deposits from './pages/cashier/Deposits';
 import Reconciliation from './pages/admin/Reconciliation';
 import Dashboard from './pages/admin/Dashboard';
+import Reports from './pages/admin/Reports';
 import Expenses from './pages/admin/Expenses';
 
 export default function App() {
@@ -57,7 +63,7 @@ export default function App() {
 
   const fetchCashiers = async () => {
     try {
-      const response = await axios.get('/api/admin/cashiers');
+      const response = await api.get('/admin/cashiers');
       setCashiersList(response.data);
     } catch (err) {
       console.error('Failed to fetch cashiers:', err);
@@ -66,7 +72,7 @@ export default function App() {
 
   const fetchAuditLogs = async () => {
     try {
-      const response = await axios.get('/api/admin/audit-logs');
+      const response = await api.get('/admin/audit-logs');
       setAuditLogs(response.data);
     } catch (err) {
       console.error('Failed to fetch audit logs:', err);
@@ -78,9 +84,7 @@ export default function App() {
 
   const fetchMyStudents = async () => {
     try {
-      const response = await axios.get('/api/guardians/students', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/guardians/students');
       setStudents(response.data);
     } catch (err) {
       console.error('Failed to fetch students:', err);
@@ -133,7 +137,7 @@ export default function App() {
     setCashierErr(null);
 
     try {
-      const response = await axios.post('/api/auth/signup', {
+      const response = await api.post('/auth/signup', {
         ...cashierForm,
         role: 'cashier'
       });
@@ -166,62 +170,14 @@ export default function App() {
   };
 
   const renderDashboard = () => {
+    const role = user.role;
     return (
-      <div className="container" style={{ paddingTop: '40px', paddingBottom: '40px' }}>
-        {/* Navigation / Header */}
-        <header className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 40px', marginBottom: '30px' }}>
-          <div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: '800', background: 'linear-gradient(135deg, #ffffff, var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              Smart School Dashboard
-            </h1>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              Logged in as <strong style={{ color: 'white' }}>{user.name}</strong> ({user.email})
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <span className="badge badge-active" style={{ background: 'rgba(99, 102, 241, 0.2)', color: 'var(--primary)', borderColor: 'var(--primary)' }}>
-              Role: {user.role}
-            </span>
-            <button className="btn btn-secondary" onClick={handleLogout} style={{ padding: '10px 20px', fontSize: '0.875rem' }}>
-              Log Out
-            </button>
-          </div>
-        </header>
+      <AppShell user={user} onLogout={handleLogout}>
+        <main className="layout-stack-lg">
 
-        {/* Dynamic content based on user role */}
-        <main style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
-          
-          {/* GUARDIAN PANEL */}
-          {user.role === 'guardian' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-              
-              {/* Guardian Dashboard Sub-Navigation Tabs */}
-              <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '15px', marginBottom: '10px' }}>
-                <button 
-                  type="button"
-                  className={`btn ${guardianTab === 'wards' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setGuardianTab('wards')}
-                >
-                  My Wards
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${guardianTab === 'payment' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setGuardianTab('payment')}
-                >
-                  Pay Fees
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${guardianTab === 'receipts' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setGuardianTab('receipts')}
-                >
-                  Receipt History
-                </button>
-              </div>
+          {role === 'guardian' && (
+            <div className="layout-stack">
+              <RoleNav role={role} activeTab={guardianTab} onChange={setGuardianTab} />
 
               {guardianTab === 'wards' && (
                 <div className="glass-panel" style={{ padding: '40px' }}>
@@ -230,14 +186,12 @@ export default function App() {
                     Under the **Digital Personal Data Protection (DPDP) Act 2023**, you must explicitly consent to the collection and processing of your minor ward's educational and payment data.
                   </p>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div className="layout-stack-md">
                     {students.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>
-                        No students registered under your guardian account.
-                      </div>
+                      <EmptyState title="No Wards Found" message="No students registered under your guardian account." />
                     ) : (
                       students.map(student => (
-                        <div key={student.id} className="glass-panel" style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15, 23, 42, 0.2)' }}>
+                        <div key={student.id} className="glass-panel flex-between glass-panel-sm" style={{ background: 'rgba(15, 23, 42, 0.2)' }}>
                           <div>
                             <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>{student.name}</h3>
                             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
@@ -252,8 +206,7 @@ export default function App() {
                                 ⚠️ DPDP Consent Required: Please check the box on the right to authorize data processing.
                               </p>
                             )}
-                            
-                            {/* KYC Processing status alert */}
+
                             {student.status === 'pending' && student.ocrFlagged && (
                               <p style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '4px', fontWeight: 500 }}>
                                 ⚠️ Document mismatch flagged. Awaiting Administrative verification override.
@@ -271,9 +224,7 @@ export default function App() {
                             )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                            <span className={`badge ${student.status === 'active' ? 'badge-active' : 'badge-pending'}`} style={{ textTransform: 'capitalize' }}>
-                              {student.status}
-                            </span>
+                            <StatusBadge status={student.status} />
                             <label className="checkbox-container" style={{ margin: 0 }}>
                               <input
                                 type="checkbox"
@@ -291,152 +242,58 @@ export default function App() {
                 </div>
               )}
 
-              {guardianTab === 'payment' && (
-                <Payment />
-              )}
+              {guardianTab === 'payment' && <Payment />}
 
-              {guardianTab === 'receipts' && (
-                <Receipts />
-              )}
+              {guardianTab === 'receipts' && <Receipts />}
 
             </div>
           )}
 
-          {/* ADMIN PANEL */}
-          {user.role === 'admin' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-              
-              {/* Admin Dashboard Sub-Navigation Tabs */}
-              <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '15px', marginBottom: '10px' }}>
-                <button 
-                  type="button"
-                  className={`btn ${adminTab === 'dashboard' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setAdminTab('dashboard')}
-                >
-                  Analytics Dashboard
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${adminTab === 'cashiers' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setAdminTab('cashiers')}
-                >
-                  Cashier Setup
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${adminTab === 'fees' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setAdminTab('fees')}
-                >
-                  Fee Engine
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${adminTab === 'approvals' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setAdminTab('approvals')}
-                >
-                  Pending Approvals
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${adminTab === 'reconciliation' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setAdminTab('reconciliation')}
-                >
-                  Bank Reconciliation
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${adminTab === 'expenses' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setAdminTab('expenses')}
-                >
-                  Maintenance Expenses
-                </button>
-              </div>
+          {role === 'admin' && (
+            <div className="layout-stack">
+              <RoleNav role={role} activeTab={adminTab} onChange={setAdminTab} />
 
               {adminTab === 'cashiers' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-                  {/* Cashier Creation Form */}
-                  <div className="glass-panel" style={{ padding: '40px' }}>
+                <div className="layout-grid-2">
+                  <div className="glass-panel panel-padded">
                     <h2 style={{ fontSize: '1.25rem', marginBottom: '20px' }}>Register New Cashier</h2>
                     <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.875rem' }}>
                       Create secure cashier accounts. Cashiers can receive fee payments but cannot modify structural configurations.
                     </p>
 
                     {cashierMsg && <div className="alert alert-success">{cashierMsg}</div>}
-                    {cashierErr && <div className="alert alert-error">{cashierErr}</div>}
+                    <ErrorState message={cashierErr} />
 
                     <form onSubmit={handleCreateCashier}>
                       <div className="form-group">
                         <label className="form-label">Full Name</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          required
-                          value={cashierForm.name}
-                          onChange={(e) => setCashierForm({ ...cashierForm, name: e.target.value })}
-                          placeholder="Cashier's name"
-                        />
+                        <input type="text" className="form-input" required value={cashierForm.name} onChange={(e) => setCashierForm({ ...cashierForm, name: e.target.value })} placeholder="Cashier's name" />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Email Address</label>
-                        <input
-                          type="email"
-                          className="form-input"
-                          required
-                          value={cashierForm.email}
-                          onChange={(e) => setCashierForm({ ...cashierForm, email: e.target.value })}
-                          placeholder="cashier@school.com"
-                        />
+                        <input type="email" className="form-input" required value={cashierForm.email} onChange={(e) => setCashierForm({ ...cashierForm, email: e.target.value })} placeholder="cashier@school.com" />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Mobile Number</label>
-                        <input
-                          type="tel"
-                          className="form-input"
-                          required
-                          maxLength="10"
-                          value={cashierForm.mobile}
-                          onChange={(e) => setCashierForm({ ...cashierForm, mobile: e.target.value })}
-                          placeholder="10-digit number"
-                        />
+                        <input type="tel" className="form-input" required maxLength="10" value={cashierForm.mobile} onChange={(e) => setCashierForm({ ...cashierForm, mobile: e.target.value })} placeholder="10-digit number" />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Password</label>
-                        <input
-                          type="password"
-                          className="form-input"
-                          required
-                          value={cashierForm.password}
-                          onChange={(e) => setCashierForm({ ...cashierForm, password: e.target.value })}
-                          placeholder="Initial password"
-                        />
+                        <input type="password" className="form-input" required value={cashierForm.password} onChange={(e) => setCashierForm({ ...cashierForm, password: e.target.value })} placeholder="Initial password" />
                       </div>
-                      <button type="submit" className="btn" style={{ width: '100%', marginTop: '10px' }}>
-                        Create Cashier
-                      </button>
+                      <button type="submit" className="btn" style={{ width: '100%', marginTop: '10px' }}>Create Cashier</button>
                     </form>
                   </div>
 
-                  {/* Stacked Panels on the Right */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                    
-                    {/* Active Cashiers dynamic List */}
-                    <div className="glass-panel" style={{ padding: '30px' }}>
+                  <div className="layout-stack-lg">
+                    <div className="glass-panel panel-compact">
                       <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>Registered Cashier Staff</h2>
                       <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.85rem' }}>
                         Showing active cashier staff accounts fetched dynamically from the database.
                       </p>
-
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="overflow-table">
                         {cashiersList.length === 0 ? (
-                          <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                            No cashier accounts registered yet.
-                          </div>
+                          <EmptyState title="No Cashiers" message="No cashier accounts registered yet." />
                         ) : (
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
                             <thead>
@@ -455,11 +312,7 @@ export default function App() {
                                   <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{cashier.email}</td>
                                   <td style={{ padding: '10px' }}>{cashier.mobile}</td>
                                   <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{cashier.createdByName}</td>
-                                  <td style={{ padding: '10px' }}>
-                                    <span className="badge badge-active" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
-                                      {cashier.status}
-                                    </span>
-                                  </td>
+                                  <td style={{ padding: '10px' }}><StatusBadge status={cashier.status} /></td>
                                 </tr>
                               ))}
                             </tbody>
@@ -468,25 +321,21 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Database Audit Logs Table */}
-                    <div className="glass-panel" style={{ padding: '30px' }}>
+                    <div className="glass-panel panel-compact">
                       <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>System Audit Logs (Recent Operations)</h2>
                       <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.85rem' }}>
                         Showing mutations tracked in the PostgreSQL `audit_logs` table (read-only for security auditing).
                       </p>
-
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="overflow-table">
                         {auditLogs.length === 0 ? (
-                          <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                            No system logs recorded yet.
-                          </div>
+                          <EmptyState title="No Audit Logs" message="No system logs recorded yet." />
                         ) : (
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
                             <thead>
                               <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
                                 <th style={{ padding: '10px', width: '15%' }}>Time</th>
                                 <th style={{ padding: '10px', width: '20%' }}>Actor & Action</th>
-                                <th style={{ padding: '10px', width: '50%' }}>Description (Real Data)</th>
+                                <th style={{ padding: '10px', width: '50%' }}>Description</th>
                                 <th style={{ padding: '10px', width: '15%', textAlign: 'center' }}>Details</th>
                               </tr>
                             </thead>
@@ -496,25 +345,14 @@ export default function App() {
                                 return (
                                   <React.Fragment key={log.id}>
                                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                      <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>
-                                        {new Date(log.createdAt).toLocaleTimeString()}
-                                      </td>
+                                      <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{new Date(log.createdAt).toLocaleTimeString()}</td>
                                       <td style={{ padding: '10px' }}>
-                                        <span className="badge" style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(255,255,255,0.05)', color: 'white', marginRight: '5px', display: 'inline-block', textTransform: 'capitalize' }}>
-                                          {log.actorRole}
-                                        </span>
+                                        <span className="badge" style={{ fontSize: '0.6rem', padding: '2px 5px', background: 'rgba(255,255,255,0.05)', color: 'white', marginRight: '5px', display: 'inline-block', textTransform: 'capitalize' }}>{log.actorRole}</span>
                                         <code style={{ color: 'var(--secondary)' }}>{log.action}</code>
                                       </td>
-                                      <td style={{ padding: '10px', fontWeight: 500 }}>
-                                        {getLogDetails(log)}
-                                      </td>
+                                      <td style={{ padding: '10px', fontWeight: 500 }}>{getLogDetails(log)}</td>
                                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                                        <button 
-                                          type="button"
-                                          className="btn btn-secondary" 
-                                          style={{ padding: '4px 8px', fontSize: '0.65rem', borderRadius: '5px' }}
-                                          onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                                        >
+                                        <button type="button" className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.65rem', borderRadius: '5px' }} onClick={() => setExpandedLogId(isExpanded ? null : log.id)}>
                                           {isExpanded ? 'Hide' : 'Inspect'}
                                         </button>
                                       </td>
@@ -525,15 +363,11 @@ export default function App() {
                                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', fontSize: '0.75rem', fontFamily: 'monospace' }}>
                                             <div>
                                               <div style={{ color: 'var(--error)', marginBottom: '5px', fontWeight: 'bold' }}>BEFORE STATE:</div>
-                                              <pre style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.8)', padding: '10px', borderRadius: '5px', border: '1px solid rgba(244,63,94,0.2)', maxHeight: '150px' }}>
-                                                {JSON.stringify(log.before, null, 2) || 'null'}
-                                              </pre>
+                                              <pre style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.8)', padding: '10px', borderRadius: '5px', border: '1px solid rgba(244,63,94,0.2)', maxHeight: '150px' }}>{JSON.stringify(log.before, null, 2) || 'null'}</pre>
                                             </div>
                                             <div>
                                               <div style={{ color: 'var(--success)', marginBottom: '5px', fontWeight: 'bold' }}>AFTER STATE:</div>
-                                              <pre style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.8)', padding: '10px', borderRadius: '5px', border: '1px solid rgba(16,185,129,0.2)', maxHeight: '150px' }}>
-                                                {JSON.stringify(log.after, null, 2) || 'null'}
-                                              </pre>
+                                              <pre style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.8)', padding: '10px', borderRadius: '5px', border: '1px solid rgba(16,185,129,0.2)', maxHeight: '150px' }}>{JSON.stringify(log.after, null, 2) || 'null'}</pre>
                                             </div>
                                           </div>
                                         </td>
@@ -547,83 +381,32 @@ export default function App() {
                         )}
                       </div>
                     </div>
-
                   </div>
                 </div>
               )}
 
-              {adminTab === 'dashboard' && (
-                <Dashboard setAdminTab={setAdminTab} />
-              )}
-
-              {adminTab === 'fees' && (
-                <FeeSetup />
-              )}
-
-              {adminTab === 'approvals' && (
-                <Approvals />
-              )}
-
-              {adminTab === 'reconciliation' && (
-                <Reconciliation />
-              )}
-
-              {adminTab === 'expenses' && (
-                <Expenses />
-              )}
+              {adminTab === 'dashboard' && <Dashboard setAdminTab={setAdminTab} />}
+              {adminTab === 'fees' && <FeeSetup />}
+              {adminTab === 'approvals' && <Approvals />}
+              {adminTab === 'reports' && <Reports />}
+              {adminTab === 'reconciliation' && <Reconciliation />}
+              {adminTab === 'expenses' && <Expenses />}
 
             </div>
           )}
 
-          {/* CASHIER PANEL */}
-          {user.role === 'cashier' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-              
-              {/* Cashier Dashboard Sub-Navigation Tabs */}
-              <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '15px', marginBottom: '10px' }}>
-                <button 
-                  type="button"
-                  className={`btn ${cashierTab === 'collect' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setCashierTab('collect')}
-                >
-                  Collect Fees
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${cashierTab === 'queue' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setCashierTab('queue')}
-                >
-                  Offline Queue
-                </button>
-                <button 
-                  type="button"
-                  className={`btn ${cashierTab === 'cheques' ? '' : 'btn-secondary'}`}
-                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
-                  onClick={() => setCashierTab('cheques')}
-                >
-                  Cheque Deposits
-                </button>
-              </div>
+          {role === 'cashier' && (
+            <div className="layout-stack">
+              <RoleNav role={role} activeTab={cashierTab} onChange={setCashierTab} />
 
-              {cashierTab === 'collect' && (
-                <Collections />
-              )}
-
-              {cashierTab === 'queue' && (
-                <OfflineQueue />
-              )}
-
-              {cashierTab === 'cheques' && (
-                <Deposits />
-              )}
-
+              {cashierTab === 'collect' && <Collections />}
+              {cashierTab === 'offline' && <OfflineQueue />}
+              {cashierTab === 'deposits' && <Deposits />}
             </div>
           )}
 
         </main>
-      </div>
+      </AppShell>
     );
   };
 

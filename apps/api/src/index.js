@@ -1,15 +1,19 @@
 const express = require('express');
-// Force nodemon restart to load updated .env keys
 const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
+const { requestId, securityHeaders, corsOptions } = require('./middlewares/security');
+const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { authenticate, checkRole } = require('./middlewares/rbac');
 const { auditLogger } = require('./middlewares/audit');
+const { validateBody } = require('./middlewares/validate');
+const healthRouter = require('./routes/health');
+const paymentSchemas = require('./schemas/paymentSchemas');
+const feeSchemas = require('./schemas/feeSchemas');
 const authController = require('./controllers/auth');
 const feeController = require('./controllers/fee');
 const kycController = require('./controllers/kyc');
@@ -22,21 +26,22 @@ const expensesController = require('./controllers/expenses');
 const dashboardController = require('./controllers/dashboard');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const config = require('./config/env').requireConfig();
+const PORT = config.port;
 
-// Standard Middlewares
-app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
+app.use(requestId);
+app.use(securityHeaders);
+app.use(cors(corsOptions()));
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 
-// Rate Limiting
 const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 auth requests per window
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV !== 'production',
+  skip: () => config.nodeEnv !== 'production',
 });
 
 // Root route
@@ -44,12 +49,16 @@ app.get('/', (req, res) => {
   res.json({ message: 'Smart School FinTech API is running' });
 });
 
+// Health check routes (before authenticated routes)
+app.use(healthRouter);
+
 // Authentication Routes
 app.post('/api/auth/signup', authRateLimiter, authController.signup);
 app.post('/api/auth/login', authRateLimiter, authController.login);
 app.post('/api/auth/verify-otp', authRateLimiter, authController.verifyOTP);
 app.post('/api/auth/forgot-password', authRateLimiter, authController.forgotPassword);
 app.post('/api/auth/reset-password', authRateLimiter, authController.resetPassword);
+app.post('/api/auth/refresh-token', authRateLimiter, authController.refreshToken);
 
 // DPDP Consent Endpoint (Requires guardian authentication)
 app.post(
@@ -66,6 +75,12 @@ app.get(
   checkRole(['guardian', 'admin']),
   authController.getMyStudents
 );
+app.post(
+  '/api/guardians/students',
+  authenticate,
+  checkRole(['guardian', 'admin']),
+  authController.addStudent
+);
 
 // Protected Admin Testing Route (RBAC verification)
 app.get(
@@ -75,6 +90,14 @@ app.get(
   (req, res) => {
     res.json({ message: 'Welcome to Admin Dashboard', adminId: req.user.id });
   }
+);
+
+// Admin-only staff creation route
+app.post(
+  '/api/admin/staff',
+  authenticate,
+  checkRole(['admin']),
+  authController.createStaff
 );
 
 // Protected Admin Route to fetch Cashiers list
@@ -110,6 +133,7 @@ app.post(
   '/api/fees/structures',
   authenticate,
   checkRole(['admin']),
+  validateBody(feeSchemas.createFeeStructureSchema),
   auditLogger('fee_structure', 'create_fee_structure'),
   feeController.createFeeStructure
 );
@@ -124,6 +148,7 @@ app.post(
   '/api/fees/assignments',
   authenticate,
   checkRole(['admin', 'cashier']),
+  validateBody(feeSchemas.assignFeeSchema),
   auditLogger('fee_assignment', 'assign_fee'),
   feeController.assignFee
 );
@@ -168,12 +193,20 @@ app.post(
   auditLogger('student', 'override_kyc'),
   kycController.overrideKYC
 );
+app.post(
+  '/api/admin/approvals/:studentId/reject',
+  authenticate,
+  checkRole(['admin']),
+  auditLogger('student', 'reject_student'),
+  kycController.rejectStudent
+);
 
 // === PAYMENTS & TRANSACTIONS ROUTES ===
 app.post(
   '/api/payments/initiate',
   authenticate,
   checkRole(['guardian']),
+  validateBody(paymentSchemas.initiatePaymentSchema),
   paymentsController.initiatePayment
 );
 app.post(
@@ -202,6 +235,7 @@ app.post(
   '/api/payments/collect-manual',
   authenticate,
   checkRole(['admin', 'cashier']),
+  validateBody(paymentSchemas.collectManualSchema),
   paymentsController.collectManual
 );
 
@@ -210,6 +244,7 @@ app.post(
   '/api/payments/offline',
   authenticate,
   checkRole(['admin', 'cashier']),
+  validateBody(paymentSchemas.collectOfflineSchema),
   paymentsController.collectOffline
 );
 app.post(
@@ -345,16 +380,8 @@ app.get(
   }
 );
 
-// Fallback for 404 routes
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled Server Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

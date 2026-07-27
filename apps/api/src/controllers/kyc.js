@@ -1,11 +1,12 @@
 const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { encrypt } = require('../utils/crypto');
+const { maskDocumentRef, minimizeOcrData } = require('../domain/privacy/masking');
+const { ValidationError, NotFoundError, AppError } = require('../errors/AppError');
 
-// Helper to check string match (case-insensitive, ignores minor spaces)
 const isNameMatch = (name1, name2) => {
   if (!name1 || !name2) return false;
-  
+
   const getWords = (str) => {
     return str.toLowerCase()
       .replace(/[^a-z0-9\s]/g, '')
@@ -26,7 +27,6 @@ const isNameMatch = (name1, name2) => {
   return matches.length === short.length;
 };
 
-// Helper to compare DOB
 const isDateMatch = (date1, date2) => {
   if (!date1 || !date2) return false;
   try {
@@ -38,13 +38,12 @@ const isDateMatch = (date1, date2) => {
   }
 };
 
-// Submit KYC (Stage 1 Signup)
-const submitKYC = async (req, res) => {
+const submitKYC = async (req, res, next) => {
   try {
     const { studentId, docType, docRef, ocrData } = req.body;
 
     if (!studentId || !docType || !ocrData) {
-      return res.status(400).json({ error: 'studentId, docType, and ocrData are required' });
+      throw new ValidationError('studentId, docType, and ocrData are required');
     }
 
     const student = await prisma.student.findUnique({
@@ -52,54 +51,49 @@ const submitKYC = async (req, res) => {
     });
 
     if (!student) {
-      return res.status(404).json({ error: 'Student not found' });
+      throw new NotFoundError('Student');
     }
 
-    // Compare OCR parsed results with form inputs
-    const ocrName = ocrData.name;
-    const ocrDob = ocrData.dob;
+    if (req.user && req.user.role === 'guardian' && student.guardianId !== req.user.id) {
+      throw new AppError('Forbidden: Access denied', 403);
+    }
+
+    const safeOcrData = minimizeOcrData(ocrData);
+    const ocrName = safeOcrData.name;
+    const ocrDob = safeOcrData.dob;
 
     const nameMatches = isNameMatch(student.name, ocrName);
     const dobMatches = isDateMatch(student.dob, ocrDob);
 
-    // Flag if there's any mismatch
     const ocrFlagged = !nameMatches || !dobMatches;
 
-    // Mask docRef to last 4 digits (e.g. **** **** 1234) for security/compliance
-    let maskedDocRef = null;
-    if (docRef) {
-      const cleanRef = docRef.replace(/\s/g, '');
-      maskedDocRef = cleanRef.length >= 4 ? `**** **** ${cleanRef.slice(-4)}` : cleanRef;
-    }
+    const maskedDocRef = maskDocumentRef(docRef);
 
-    // Create or Update StudentKYC record
     const studentKyc = await prisma.studentKYC.upsert({
       where: { studentId: Number(studentId) },
       update: {
         docType,
         docRef: maskedDocRef,
-        ocrData,
+        ocrData: safeOcrData,
         ocrFlagged,
-        verifiedAt: null // Reset verification status on new upload
+        verifiedAt: null
       },
       create: {
         studentId: Number(studentId),
         docType,
         docRef: maskedDocRef,
-        ocrData,
+        ocrData: safeOcrData,
         ocrFlagged
       }
     });
 
-    // Update the student's ocrFlagged status
     await prisma.student.update({
       where: { id: Number(studentId) },
       data: { ocrFlagged }
     });
 
-    // Log Audit Log
     await logAudit({
-      actorId: req.user ? req.user.id : student.guardianId, // Fallback if self-submitting during signup
+      actorId: req.user ? req.user.id : student.guardianId,
       actorRole: req.user ? req.user.role : 'guardian',
       action: 'submit_kyc',
       entity: 'student_kyc',
@@ -109,19 +103,16 @@ const submitKYC = async (req, res) => {
     });
 
     return res.status(200).json(studentKyc);
-  } catch (error) {
-    console.error('Submit KYC error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Fetch pending approvals for Admin
-const getPendingApprovals = async (req, res) => {
+const getPendingApprovals = async (req, res, next) => {
   try {
     const pending = await prisma.student.findMany({
       where: {
-        status: 'pending',
-        kycRecord: { isNot: null }
+        status: 'pending'
       },
       include: {
         guardian: {
@@ -137,14 +128,12 @@ const getPendingApprovals = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
     return res.status(200).json(pending);
-  } catch (error) {
-    console.error('Get approvals error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Direct Admin KYC approval (sets status active)
-const approveKYC = async (req, res) => {
+const approveKYC = async (req, res, next) => {
   try {
     const { studentId } = req.params;
 
@@ -153,30 +142,29 @@ const approveKYC = async (req, res) => {
       include: { kycRecord: true }
     });
 
-    if (!student || !student.kycRecord) {
-      return res.status(404).json({ error: 'Student or student KYC details not found' });
+    if (!student) {
+      throw new NotFoundError('Student');
     }
 
     const updatedStudent = await prisma.$transaction(async (tx) => {
-      // 1. Update Student status
       const s = await tx.student.update({
         where: { id: Number(studentId) },
         data: {
           status: 'active',
-          ocrFlagged: false // reset flag since admin approved
-        }
-      });
-
-      // 2. Mark KYC as verified
-      await tx.studentKYC.update({
-        where: { studentId: Number(studentId) },
-        data: {
-          verifiedAt: new Date(),
           ocrFlagged: false
         }
       });
 
-      // 3. Auto-assign standard-wise (class-wise) fee structures
+      if (student.kycRecord) {
+        await tx.studentKYC.update({
+          where: { studentId: Number(studentId) },
+          data: {
+            verifiedAt: new Date(),
+            ocrFlagged: false
+          }
+        });
+      }
+
       const feeStructures = await tx.feeStructure.findMany({
         where: {
           OR: [
@@ -199,7 +187,7 @@ const approveKYC = async (req, res) => {
             data: {
               studentId: s.id,
               feeStructureId: fs.id,
-              dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days limit
+              dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
               status: 'pending'
             }
           });
@@ -209,7 +197,6 @@ const approveKYC = async (req, res) => {
       return s;
     });
 
-    // Log Audit
     await logAudit({
       actorId: req.user.id,
       actorRole: req.user.role,
@@ -225,20 +212,18 @@ const approveKYC = async (req, res) => {
       message: 'KYC verified and student marked active',
       student: updatedStudent
     });
-  } catch (error) {
-    console.error('Approve KYC error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Admin Manual Override & Approval
-const overrideKYC = async (req, res) => {
+const overrideKYC = async (req, res, next) => {
   try {
     const { studentId } = req.params;
     const { name, dob, class: className } = req.body;
 
     if (!name || !dob || !className) {
-      return res.status(400).json({ error: 'Corrected name, dob, and class are required for manual override' });
+      throw new ValidationError('Corrected name, dob, and class are required for manual override');
     }
 
     const student = await prisma.student.findUnique({
@@ -246,12 +231,11 @@ const overrideKYC = async (req, res) => {
       include: { kycRecord: true }
     });
 
-    if (!student || !student.kycRecord) {
-      return res.status(404).json({ error: 'Student or student KYC details not found' });
+    if (!student) {
+      throw new NotFoundError('Student');
     }
 
     const updatedStudent = await prisma.$transaction(async (tx) => {
-      // 1. Update Student with corrected details & set active
       const s = await tx.student.update({
         where: { id: Number(studentId) },
         data: {
@@ -263,16 +247,16 @@ const overrideKYC = async (req, res) => {
         }
       });
 
-      // 2. Mark KYC verified and override flagged status
-      await tx.studentKYC.update({
-        where: { studentId: Number(studentId) },
-        data: {
-          verifiedAt: new Date(),
-          ocrFlagged: false
-        }
-      });
+      if (student.kycRecord) {
+        await tx.studentKYC.update({
+          where: { studentId: Number(studentId) },
+          data: {
+            verifiedAt: new Date(),
+            ocrFlagged: false
+          }
+        });
+      }
 
-      // 3. Auto-assign standard-wise (class-wise) fee structures
       const feeStructures = await tx.feeStructure.findMany({
         where: {
           OR: [
@@ -295,7 +279,7 @@ const overrideKYC = async (req, res) => {
             data: {
               studentId: s.id,
               feeStructureId: fs.id,
-              dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days limit
+              dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
               status: 'pending'
             }
           });
@@ -305,7 +289,6 @@ const overrideKYC = async (req, res) => {
       return s;
     });
 
-    // Log Audit
     await logAudit({
       actorId: req.user.id,
       actorRole: req.user.role,
@@ -321,18 +304,17 @@ const overrideKYC = async (req, res) => {
       message: 'KYC manually overridden and approved successfully',
       student: updatedStudent
     });
-  } catch (error) {
-    console.error('Override KYC error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const submitStage2KYC = async (req, res) => {
+const submitStage2KYC = async (req, res, next) => {
   try {
     const { student_id, bank_account, ifsc, passbook_photo_url } = req.body;
 
     if (!student_id || !bank_account || !ifsc) {
-      return res.status(400).json({ error: 'student_id, bank_account, and ifsc are required' });
+      throw new ValidationError('student_id, bank_account, and ifsc are required');
     }
 
     const studentKYC = await prisma.studentKYC.findUnique({
@@ -340,10 +322,14 @@ const submitStage2KYC = async (req, res) => {
     });
 
     if (!studentKYC) {
-      return res.status(404).json({ error: 'Student Stage 1 KYC not found' });
+      throw new NotFoundError('Student Stage 1 KYC');
     }
 
-    // Encrypt sensitive banking fields
+    const student = await prisma.student.findUnique({ where: { id: Number(student_id) } });
+    if (req.user && req.user.role === 'guardian' && student && student.guardianId !== req.user.id) {
+      throw new AppError('Forbidden: Access denied', 403);
+    }
+
     const encryptedBankAccount = encrypt(bank_account);
     const encryptedIfsc = encrypt(ifsc);
 
@@ -357,7 +343,6 @@ const submitStage2KYC = async (req, res) => {
       }
     });
 
-    // Log to Audit Log
     await logAudit({
       actorId: req.user.id,
       actorRole: req.user.role,
@@ -374,21 +359,57 @@ const submitStage2KYC = async (req, res) => {
       kycRecord: updated
     });
 
-  } catch (error) {
-    console.error('Submit stage 2 KYC error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const getAllStudents = async (req, res) => {
+const getAllStudents = async (req, res, next) => {
   try {
     const students = await prisma.student.findMany({
       include: { guardian: true, kycRecord: true }
     });
     return res.status(200).json(students);
-  } catch (error) {
-    console.error('Get all students error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const rejectStudent = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const { reason } = req.body;
+
+    const student = await prisma.student.findUnique({
+      where: { id: Number(studentId) }
+    });
+
+    if (!student) {
+      throw new NotFoundError('Student');
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: Number(studentId) },
+      data: { status: 'rejected' }
+    });
+
+    await logAudit({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'reject_student',
+      entity: 'student',
+      entityId: student.id,
+      before: { id: student.id, status: student.status },
+      after: { id: updated.id, status: updated.status }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Student registration rejected',
+      student: updated
+    });
+  } catch (err) {
+    next(err);
   }
 };
 
@@ -398,5 +419,6 @@ module.exports = {
   approveKYC,
   overrideKYC,
   getAllStudents,
-  submitStage2KYC
+  submitStage2KYC,
+  rejectStudent
 };

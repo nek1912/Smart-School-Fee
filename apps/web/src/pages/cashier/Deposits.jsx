@@ -146,7 +146,7 @@ export default function Deposits() {
               />
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="submit" className="btn btn-error" style={{ background: 'var(--error)' }}>
+              <button type="submit" className="btn btn-error" >
                 Confirm Bounce & Apply Penalty (₹500)
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setBouncingId(null)}>
@@ -157,13 +157,13 @@ export default function Deposits() {
         </div>
       )}
 
-      <div style={{ overflowX: 'auto' }}>
+      <div className="overflow-table">
         {cheques.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#cbd5e1' }}>
+          <div className="empty-state" style={{ color: '#cbd5e1' }}>
             No cheques registered in the system.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
+          <table className="table-base" style={{ fontSize: '0.825rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--glass-border)', color: '#cbd5e1' }}>
                 <th style={{ padding: '12px' }}>Student</th>

@@ -29,10 +29,10 @@ export default function OCRUpload({ docType, onOCRComplete }) {
     const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
 
     // 1. Try to find DOB (e.g. DOB: 15/08/2012, Date of Birth: 15-08-2012, 15/08/2012)
-    const dobRegex = /(?:DOB|Date of Birth|Birth|DOB:)\s*[:\-]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{4})/i;
+    const dobRegex = /(?:DOB|Date of Birth|Birth|DOB:)\s*[:-]?\s*(\d{2}[/\-]\d{2}[/\-]\d{4})/i;
     const dobMatch = text.match(dobRegex);
     if (dobMatch) {
-      const dobStr = dobMatch[1].replace(/\-/g, '/'); // normalize separator
+      const dobStr = dobMatch[1].replace(/-/g, '/'); // normalize separator
       const parts = dobStr.split('/');
       if (parts.length === 3) {
         // Assume format is DD/MM/YYYY
@@ -144,8 +144,8 @@ export default function OCRUpload({ docType, onOCRComplete }) {
 
   return (
     <div className="glass-panel" style={{ padding: '20px', marginTop: '15px', background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="layout-stack-sm">
+        <div className="flex-between">
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
             IDENTITY DOCUMENT OCR ({docType.toUpperCase()})
           </span>

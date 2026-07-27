@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Tesseract from 'tesseract.js';
 import { addPaymentToQueue } from '../../utils/idb';
 
@@ -19,6 +18,7 @@ export default function Collections() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleOCRChequeScan = async (e) => {
     const file = e.target.files[0];
@@ -106,7 +106,6 @@ export default function Collections() {
         });
         const data = await res.json();
         if (res.status === 200) {
-          // Filter to only pending/overdue assignments
           setAssignments(data.filter(a => a.status === 'pending' || a.status === 'overdue'));
         }
       } catch (err) {
@@ -125,9 +124,18 @@ export default function Collections() {
     }
     const chosen = assignments.find(a => a.id === Number(selectedAssignmentId));
     if (chosen && chosen.feeStructure) {
-      setAmount(chosen.feeStructure.amount.toString());
+      const adj = adjustedAmount(chosen);
+      setAmount(adj.toString());
     }
   }, [selectedAssignmentId, assignments]);
+
+  const adjustedAmount = (asg) => {
+    const base = Number(asg.feeStructure.amount);
+    return (asg.waiverPenalties || []).reduce((total, item) => {
+      if (item.status !== 'approved') return total;
+      return item.type === 'penalty' ? total + Number(item.amount) : total - Number(item.amount);
+    }, base);
+  };
 
   const filteredStudents = students.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -162,7 +170,9 @@ export default function Collections() {
       bank: method === 'CHEQUE' ? bank : undefined,
       idempotency_key: idempotencyKey,
       timestamp: new Date().toISOString(),
-      token: token // Attach cashier session token for background sync authentication
+      local_status: 'queued',
+      attempts: 0,
+      last_error: null
     };
 
     // If browser is offline, queue to IndexedDB directly
@@ -202,7 +212,10 @@ export default function Collections() {
 
       const data = await res.json();
       if (res.status === 200 || res.status === 201) {
-        setSuccess(`Payment recorded successfully! Receipt generated: ${data.receiptNumber || 'Pending clearance'}`);
+        const receipt = data.receiptNumber || data.transaction?.receiptNumber;
+        setSuccess(method === 'CASH'
+          ? `Cash payment recorded. Receipt: ${receipt || 'created'}. Cash remains in-hand until deposited.`
+          : 'Cheque recorded. Receipt will be generated only after bank clearance.');
         // Reset selections
         setSelectedAssignmentId('');
         setChequeNo('');
@@ -224,7 +237,17 @@ export default function Collections() {
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '30px', color: '#ffffff' }} className="glass-panel">
-      <h2 style={{ fontSize: '1.25rem', marginBottom: '15px', color: '#ffffff' }}>Record Manual Collection</h2>
+      <div className="flex-between" style={{ marginBottom: '15px' }}>
+        <h2 style={{ fontSize: '1.25rem', color: '#ffffff' }}>Record Manual Collection</h2>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          style={{ padding: '6px 14px', fontSize: '0.75rem' }}
+          onClick={() => { fetchStudents(); if (selectedStudentId) { setSelectedStudentId(''); setTimeout(() => setSelectedStudentId(selectedStudentId), 50); } }}
+        >
+          ↻ Refresh
+        </button>
+      </div>
       <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '25px' }}>
         Record cash or cheque collections for student accounts. Works 100% offline.
       </p>
@@ -311,13 +334,40 @@ export default function Collections() {
             style={{ background: 'rgba(15, 23, 42, 0.8)' }}
           >
             <option value="" disabled>-- Select Pending Fee --</option>
-            {assignments.map(a => (
-              <option key={a.id} value={a.id}>
-                {a.feeStructure.name} (₹{Number(a.feeStructure.amount).toLocaleString('en-IN')})
-              </option>
-            ))}
+            {assignments.map(a => {
+              const adj = adjustedAmount(a);
+              const hasAdjustments = a.waiverPenalties?.some(w => w.status === 'approved');
+              const base = Number(a.feeStructure.amount);
+              return (
+                <option key={a.id} value={a.id}>
+                  {a.feeStructure.name} (₹{adj.toLocaleString('en-IN')}{hasAdjustments && adj !== base ? ` — adj. from ₹${base.toLocaleString('en-IN')}` : ''})
+                </option>
+              );
+            })}
           </select>
         </div>
+
+        {/* Waiver/Penalty breakdown for selected assignment */}
+        {selectedAssignmentId && (() => {
+          const chosen = assignments.find(a => a.id === Number(selectedAssignmentId));
+          if (!chosen?.waiverPenalties?.length) return null;
+          const approved = chosen.waiverPenalties.filter(w => w.status === 'approved');
+          const pending = chosen.waiverPenalties.filter(w => w.status === 'pending');
+          return (
+            <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', fontSize: '0.8rem' }}>
+              {approved.map(w => (
+                <div key={w.id} style={{ color: w.type === 'penalty' ? '#f87171' : '#34d399', marginBottom: '2px' }}>
+                  {w.type === 'penalty' ? '+' : '-'}₹{Number(w.amount).toLocaleString('en-IN')} ({w.type}) — {w.reason}
+                </div>
+              ))}
+              {pending.length > 0 && (
+                <div style={{ color: '#fbbf24' }}>
+                  {pending.length} pending adjustment(s) awaiting admin approval
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Amount Input */}
         <div className="form-group">

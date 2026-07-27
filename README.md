@@ -217,3 +217,16 @@ Please ensure that:
 - All existing tests still pass (`pnpm --filter smart-school-api test`).
 - New features include corresponding unit tests.
 - API routes are documented in the table above.
+
+## Production Readiness
+
+Before deployment, copy `.env.example` to the target environment and replace every secret. The API refuses production startup when required secrets are missing or too short. Run `pnpm --filter smart-school-api db:generate`, apply migrations, then verify `/health` and `/ready`.
+
+Required release checks:
+
+```bash
+pnpm --filter smart-school-api test
+pnpm --filter web lint
+pnpm --filter web build
+pnpm test
+```

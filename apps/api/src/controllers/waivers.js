@@ -1,16 +1,16 @@
 const prisma = require('../config/db');
+const { ValidationError, NotFoundError } = require('../errors/AppError');
 
-// Create a pending waiver or penalty
-const createWaiverPenalty = async (req, res) => {
+const createWaiverPenalty = async (req, res, next) => {
   try {
     const { student_id, fee_assignment_id, amount, type, reason } = req.body;
 
     if (!student_id || !fee_assignment_id || !amount || !type || !reason) {
-      return res.status(400).json({ error: 'All fields are required: student_id, fee_assignment_id, amount, type, reason' });
+      throw new ValidationError('All fields are required: student_id, fee_assignment_id, amount, type, reason');
     }
 
     if (!['waiver', 'penalty'].includes(type)) {
-      return res.status(400).json({ error: "Type must be either 'waiver' or 'penalty'" });
+      throw new ValidationError("Type must be either 'waiver' or 'penalty'");
     }
 
     const waiverPenalty = await prisma.waiverPenalty.create({
@@ -29,14 +29,12 @@ const createWaiverPenalty = async (req, res) => {
     });
 
     return res.status(201).json(waiverPenalty);
-  } catch (error) {
-    console.error('Create waiver error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Approve a waiver or penalty
-const approveWaiverPenalty = async (req, res) => {
+const approveWaiverPenalty = async (req, res, next) => {
   try {
     const { id } = req.params;
     const adminId = req.user.id;
@@ -47,15 +45,14 @@ const approveWaiverPenalty = async (req, res) => {
     });
 
     if (!record) {
-      return res.status(404).json({ error: 'Waiver/penalty record not found' });
+      throw new NotFoundError('Waiver/penalty record');
     }
 
     if (record.status !== 'pending') {
-      return res.status(400).json({ error: `Record is already ${record.status}` });
+      throw new ValidationError(`Record is already ${record.status}`);
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Update Waiver/Penalty status
       const updatedRecord = await tx.waiverPenalty.update({
         where: { id: Number(id) },
         data: {
@@ -65,13 +62,11 @@ const approveWaiverPenalty = async (req, res) => {
         }
       });
 
-      // 2. Apply business rules to FeeAssignment if it is a Waiver
       if (record.type === 'waiver') {
         const assignment = record.feeAssignment;
         const totalAmount = Number(assignment.feeStructure.amount);
         const waivedAmount = Number(record.amount);
 
-        // If the waiver covers the entire amount, mark it waived
         if (waivedAmount >= totalAmount) {
           await tx.feeAssignment.update({
             where: { id: assignment.id },
@@ -83,7 +78,6 @@ const approveWaiverPenalty = async (req, res) => {
       return updatedRecord;
     });
 
-    // 3. Generate Audit Log
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
@@ -97,21 +91,19 @@ const approveWaiverPenalty = async (req, res) => {
     });
 
     return res.status(200).json(result);
-  } catch (error) {
-    console.error('Approve waiver error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Reject a waiver or penalty
-const rejectWaiverPenalty = async (req, res) => {
+const rejectWaiverPenalty = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
     const adminId = req.user.id;
 
     if (!reason) {
-      return res.status(400).json({ error: 'Rejection reason is required' });
+      throw new ValidationError('Rejection reason is required');
     }
 
     const record = await prisma.waiverPenalty.findUnique({
@@ -119,11 +111,11 @@ const rejectWaiverPenalty = async (req, res) => {
     });
 
     if (!record) {
-      return res.status(404).json({ error: 'Waiver/penalty record not found' });
+      throw new NotFoundError('Waiver/penalty record');
     }
 
     if (record.status !== 'pending') {
-      return res.status(400).json({ error: `Record is already ${record.status}` });
+      throw new ValidationError(`Record is already ${record.status}`);
     }
 
     const result = await prisma.waiverPenalty.update({
@@ -134,7 +126,6 @@ const rejectWaiverPenalty = async (req, res) => {
       }
     });
 
-    // Generate Audit Log
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
@@ -148,14 +139,12 @@ const rejectWaiverPenalty = async (req, res) => {
     });
 
     return res.status(200).json(result);
-  } catch (error) {
-    console.error('Reject waiver error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// List waivers/penalties (pending or all)
-const getWaiversPenalties = async (req, res) => {
+const getWaiversPenalties = async (req, res, next) => {
   try {
     const { status } = req.query;
     const where = {};
@@ -173,9 +162,8 @@ const getWaiversPenalties = async (req, res) => {
     });
 
     return res.status(200).json(records);
-  } catch (error) {
-    console.error('Get waivers error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 

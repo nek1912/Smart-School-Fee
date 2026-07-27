@@ -101,7 +101,7 @@ export default function Dashboard({ setAdminTab }) {
     if (action === 'Add Expense') {
       if (setAdminTab) setAdminTab('expenses');
     } else if (action === 'Send Reminder') {
-      setToastMessage('🔔 SMS & Email overdue payment reminders dispatched to all defaulters!');
+      setToastMessage('Reminder dispatch is not configured yet. Export the defaulter list or open WhatsApp links from the defaulter panel.');
       setTimeout(() => setToastMessage(null), 4000);
     } else if (action === 'Waive Fee') {
       loadStudents();
@@ -155,7 +155,7 @@ export default function Dashboard({ setAdminTab }) {
   };
 
   return (
-    <div className="pastel-gradient-bg" style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '30px', borderRadius: '20px', position: 'relative' }}>
+    <div className="pastel-gradient-bg layout-stack-lg" style={{ padding: '30px', borderRadius: '20px', position: 'relative' }}>
       
       {/* Toast Notification */}
       {toastMessage && (
@@ -179,7 +179,7 @@ export default function Dashboard({ setAdminTab }) {
           justifyContent: 'center',
           zIndex: 500
         }}>
-          <div className="glass-panel" style={{ width: '450px', padding: '30px', background: 'rgba(15,23,42,0.95)', color: '#ffffff' }}>
+          <div className="glass-panel panel-compact" style={{ width: '450px', background: 'rgba(15,23,42,0.95)', color: '#ffffff' }}>
             <h2 style={{ fontSize: '1.2rem', marginBottom: '10px', color: '#ffffff' }}>Request Fee Waiver</h2>
             <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '20px' }}>
               Create a pending waiver request. It must be approved under Pending Approvals.
@@ -255,7 +255,7 @@ export default function Dashboard({ setAdminTab }) {
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <div className="layout-row" style={{ marginTop: '20px' }}>
                 <button type="submit" className="btn" style={{ flex: 1 }} disabled={submittingWaiver || assignments.length === 0}>
                   {submittingWaiver ? 'Submitting...' : 'Submit Request'}
                 </button>
@@ -306,7 +306,7 @@ export default function Dashboard({ setAdminTab }) {
       <div className="dashboard-grid-2">
         
         {/* Recharts Analytics Panel */}
-        <div className="frosted-glass-card" style={{ padding: '30px', display: 'flex', flexDirection: 'column' }}>
+        <div className="frosted-glass-card flex-col" style={{ padding: '30px' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 5px 0', color: '#0f172a' }}>
             Revenue Stream Breakdown
           </h2>
@@ -317,7 +317,7 @@ export default function Dashboard({ setAdminTab }) {
         </div>
 
         {/* Overdue Accounts Ledger Panel */}
-        <div className="frosted-glass-card" style={{ padding: '30px', display: 'flex', flexDirection: 'column' }}>
+        <div className="frosted-glass-card flex-col" style={{ padding: '30px' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 5px 0', color: '#0f172a' }}>
             Outstanding Overdue Ledger
           </h2>

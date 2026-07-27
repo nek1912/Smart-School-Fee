@@ -65,10 +65,10 @@ export default function Reconciliation() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+    <div className="layout-stack-lg">
       
       {/* Upload/Paste Form */}
-      <div className="glass-panel" style={{ padding: '30px' }}>
+      <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Bank Statement Reconciliation</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
           Upload your bank statement spreadsheet or copy-paste CSV records to auto-match deposits with cashier records.
@@ -110,10 +110,10 @@ export default function Reconciliation() {
 
       {/* Results Section */}
       {(matched.length > 0 || unmatched.length > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', alignItems: 'start' }}>
+        <div className="layout-grid-2" style={{ alignItems: 'start' }}>
           
           {/* Matched Panel */}
-          <div className="glass-panel" style={{ padding: '30px' }}>
+          <div className="glass-panel panel-compact">
             <h3 style={{ fontSize: '1rem', marginTop: 0, color: 'var(--success)', marginBottom: '15px' }}>
               Matched Deposits ({matched.length})
             </h3>
@@ -148,7 +148,7 @@ export default function Reconciliation() {
           </div>
 
           {/* Unmatched Panel */}
-          <div className="glass-panel" style={{ padding: '30px' }}>
+          <div className="glass-panel panel-compact">
             <h3 style={{ fontSize: '1rem', marginTop: 0, color: 'var(--error)', marginBottom: '15px' }}>
               Unmatched Statement Rows ({unmatched.length})
             </h3>

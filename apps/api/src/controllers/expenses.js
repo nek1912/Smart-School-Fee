@@ -1,19 +1,19 @@
 const prisma = require('../config/db');
+const { ValidationError } = require('../errors/AppError');
 
-// Predefined categories constraint
 const ALLOWED_CATEGORIES = ['watchman', 'cleaning', 'utilities', 'repairs', 'other'];
 
-const createExpense = async (req, res) => {
+const createExpense = async (req, res, next) => {
   try {
     const { description, amount, date, category } = req.body;
     const adminId = req.user.id;
 
     if (!description || !amount || !date || !category) {
-      return res.status(400).json({ error: 'All fields are required: description, amount, date, category' });
+      throw new ValidationError('All fields are required: description, amount, date, category');
     }
 
     if (!ALLOWED_CATEGORIES.includes(category)) {
-      return res.status(400).json({ error: `Category must be one of: ${ALLOWED_CATEGORIES.join(', ')}` });
+      throw new ValidationError(`Category must be one of: ${ALLOWED_CATEGORIES.join(', ')}`);
     }
 
     const expense = await prisma.maintenanceExpense.create({
@@ -26,7 +26,6 @@ const createExpense = async (req, res) => {
       }
     });
 
-    // Log to Audit Log
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
@@ -40,13 +39,12 @@ const createExpense = async (req, res) => {
     });
 
     return res.status(201).json(expense);
-  } catch (error) {
-    console.error('Create expense error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
-const getExpenses = async (req, res) => {
+const getExpenses = async (req, res, next) => {
   try {
     const expenses = await prisma.maintenanceExpense.findMany({
       include: {
@@ -58,9 +56,8 @@ const getExpenses = async (req, res) => {
     });
 
     return res.status(200).json(expenses);
-  } catch (error) {
-    console.error('Get expenses error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    next(err);
   }
 };
 
