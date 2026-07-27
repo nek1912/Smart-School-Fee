@@ -146,7 +146,7 @@ export default function Deposits() {
               />
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="submit" className="btn btn-error" style={{ background: 'var(--error)' }}>
+              <button type="submit" className="btn btn-error" >
                 Confirm Bounce & Apply Penalty (₹500)
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setBouncingId(null)}>
