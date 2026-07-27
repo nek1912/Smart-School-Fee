@@ -43,6 +43,8 @@ model Student {
   transactions     Transaction[]
   waiverPenalties WaiverPenalty[]
 
+  ledgerEntries    LedgerEntry[]
+
   @@map("students")
 }
 
@@ -109,6 +111,10 @@ model FeeAssignment {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamp()
   transactions   Transaction[]
   waiverPenalties WaiverPenalty[]
+
+  @@unique([studentId, feeStructureId])
+  @@index([studentId, status])
+  @@index([dueDate])
 
   @@map("fee_assignments")
 }
@@ -177,6 +183,13 @@ model Transaction {
   chequeRecords    ChequeRecord[]
   receiptRecord    Receipt?
 
+  paymentOrders PaymentOrder[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([studentId, status])
+  @@index([feeAssignmentId, status])
+  @@index([createdAt])
+
   @@map("transactions")
 }
 
@@ -223,6 +236,79 @@ model WaiverPenalty {
   @@map("waivers_penalties")
 }
 
+
+model ReceiptSequence {
+  id        Int      @id @default(autoincrement())
+  year      Int      @map("year")
+  nextValue Int      @default(1) @map("next_value")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp()
+
+  @@unique([year])
+  @@map("receipt_sequences")
+}
+
+model LedgerEntry {
+  id            Int         @id @default(autoincrement())
+  transactionId Int?        @map("transaction_id")
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  studentId     Int         @map("student_id")
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  type          String      @db.VarChar(30)
+  direction     String      @db.VarChar(10)
+  amount        Decimal     @db.Decimal(10, 2)
+  reference     String?     @db.VarChar(100)
+  note          String?     @db.VarChar(255)
+  createdById   Int?        @map("created_by_id")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamp()
+
+  @@index([studentId, createdAt])
+  @@index([transactionId])
+  @@map("ledger_entries")
+}
+
+model PaymentOrder {
+  id            Int         @id @default(autoincrement())
+  transactionId Int         @map("transaction_id")
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  orderId       String      @unique @map("order_id") @db.VarChar(100)
+  provider      String      @default("cashfree") @db.VarChar(40)
+  status        String      @default("created") @db.VarChar(30)
+  rawResponse   Json?       @map("raw_response")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamp()
+
+  @@index([status])
+  @@map("payment_orders")
+}
+
+model ReconciliationBatch {
+  id          Int      @id @default(autoincrement())
+  uploadedById Int    @map("uploaded_by_id")
+  fileName    String? @map("file_name") @db.VarChar(255)
+  status      String  @default("processed") @db.VarChar(30)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp()
+  items       ReconciliationItem[]
+
+  @@index([createdAt])
+  @@map("reconciliation_batches")
+}
+
+model ReconciliationItem {
+  id            Int      @id @default(autoincrement())
+  batchId       Int      @map("batch_id")
+  batch         ReconciliationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transactionId Int?     @map("transaction_id")
+  amount        Decimal  @db.Decimal(10, 2)
+  statementDate DateTime @map("statement_date") @db.Date
+  reference     String?  @db.VarChar(100)
+  status        String   @default("unmatched") @db.VarChar(30)
+  reason        String?  @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp()
+
+  @@index([transactionId])
+  @@index([status])
+  @@map("reconciliation_items")
+}
 
 model MaintenanceExpense {
   id          Int      @id @default(autoincrement())

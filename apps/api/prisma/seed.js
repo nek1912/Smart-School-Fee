@@ -168,6 +168,13 @@ async function main() {
     }
   });
 
+  // 10. Seed receipt sequence for current year
+  await prisma.receiptSequence.upsert({
+    where: { year: new Date().getFullYear() },
+    update: {},
+    create: { year: new Date().getFullYear(), nextValue: 1 }
+  });
+
   console.log('✅ Database seeded successfully!');
 }
 
