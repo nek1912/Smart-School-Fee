@@ -3,6 +3,8 @@ const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { CASHFREE_CLIENT_ID, CASHFREE_CLIENT_SECRET, CASHFREE_BASE_URL, verifySignature } = require('../config/cashfree');
 const { generateReceiptBase64 } = require('../utils/receipts');
+const { collectCash, collectCheque } = require('../domain/payments/paymentService');
+const { requireConfig } = require('../config/env');
 
 // Initiate UPI Checkout (Sandbox)
 const initiatePayment = async (req, res) => {
@@ -507,100 +509,12 @@ const collectManual = async (req, res) => {
     }
 
     const amount = Number(assignment.feeStructure.amount);
-    let transaction;
+    const idempotencyKey = req.body.idempotencyKey || `MAN_${feeAssignmentId}_${method}_${Date.now()}`;
+    const transaction = method === 'CASH'
+      ? await collectCash({ feeAssignmentId, amount: req.body.amount, idempotencyKey, actorId: req.user.id, actorRole: req.user.role, deposited })
+      : await collectCheque({ feeAssignmentId, amount: req.body.amount, chequeNo, bank, idempotencyKey, actorId: req.user.id, actorRole: req.user.role });
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Generate sequential receipt number
-      const currentYear = new Date().getFullYear();
-      const successTxs = await tx.transaction.findMany({
-        where: {
-          status: 'success',
-          receiptNumber: { startsWith: `REC-${currentYear}-` }
-        }
-      });
-
-      let nextNum = 1;
-      if (successTxs.length > 0) {
-        const nums = successTxs.map(t => {
-          const parts = t.receiptNumber.split('-');
-          if (parts.length === 3) {
-            const seq = parseInt(parts[2], 10);
-            return isNaN(seq) ? 0 : seq;
-          }
-          return 0;
-        });
-        nextNum = Math.max(...nums) + 1;
-      }
-      const receiptNumber = `REC-${currentYear}-${String(nextNum).padStart(4, '0')}`;
-
-      // 2. Create Transaction
-      transaction = await tx.transaction.create({
-        data: {
-          studentId: assignment.studentId,
-          feeAssignmentId: assignment.id,
-          amount,
-          method,
-          status: method === 'CASH' ? 'success' : 'pending', // Cheque starts as pending clearance
-          receiptNumber: method === 'CASH' ? receiptNumber : null, // Cheque gets receipt upon clearance
-          depositedAt: method === 'CASH' && deposited ? new Date() : null,
-          idempotencyKey: `MAN_${assignment.id}_${Date.now()}`
-        }
-      });
-
-      // 3. For Cheque: Create Cheque record
-      if (method === 'CHEQUE') {
-        await tx.chequeRecord.create({
-          data: {
-            transactionId: transaction.id,
-            chequeNo,
-            bank,
-            depositStatus: 'deposit_pending'
-          }
-        });
-      }
-
-      // 4. For Cash: Update Fee Assignment and create Receipt immediately
-      if (method === 'CASH') {
-        await tx.feeAssignment.update({
-          where: { id: assignment.id },
-          data: { status: 'paid' }
-        });
-
-        const receiptBase64 = await generateReceiptBase64(
-          transaction,
-          assignment.student,
-          assignment.student.guardian,
-          assignment.feeStructure
-        );
-
-        await tx.receipt.create({
-          data: {
-            transactionId: transaction.id,
-            receiptNumber,
-            fileUrl: receiptBase64
-          }
-        });
-      }
-
-      // 5. Log audit trail
-      await tx.auditLog.create({
-        data: {
-          actorId: cashierId,
-          actorRole: req.user.role,
-          action: 'collect_manual_payment',
-          entity: 'transaction',
-          entityId: transaction.id,
-          before: null,
-          after: { transactionId: transaction.id, method, amount }
-        }
-      });
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: `${method} payment logged successfully`,
-      transaction
-    });
+    return res.status(201).json({ success: true, message: `${method} payment logged successfully`, transaction });
 
   } catch (error) {
     console.error('Collect manual payment error:', error);
@@ -631,105 +545,9 @@ const collectOffline = async (req, res) => {
       return res.status(200).json(existingTx);
     }
 
-    const assignment = await prisma.feeAssignment.findUnique({
-      where: { id: Number(fee_assignment_id) },
-      include: {
-        student: { include: { guardian: true } },
-        feeStructure: true
-      }
-    });
-
-    if (!assignment) {
-      return res.status(404).json({ error: 'Fee assignment not found' });
-    }
-
-    let transaction;
-
-    await prisma.$transaction(async (tx) => {
-      // Generate receipt number if CASH
-      let receiptNumber = null;
-      if (method === 'CASH') {
-        const currentYear = new Date().getFullYear();
-        const successTxs = await tx.transaction.findMany({
-          where: {
-            status: 'success',
-            receiptNumber: { startsWith: `REC-${currentYear}-` }
-          }
-        });
-
-        let nextNum = 1;
-        if (successTxs.length > 0) {
-          const nums = successTxs.map(t => {
-            const parts = t.receiptNumber.split('-');
-            if (parts.length === 3) {
-              const seq = parseInt(parts[2], 10);
-              return isNaN(seq) ? 0 : seq;
-            }
-            return 0;
-          });
-          nextNum = Math.max(...nums) + 1;
-        }
-        receiptNumber = `REC-${currentYear}-${String(nextNum).padStart(4, '0')}`;
-      }
-
-      transaction = await tx.transaction.create({
-        data: {
-          studentId: assignment.studentId,
-          feeAssignmentId: assignment.id,
-          amount: Number(amount || assignment.feeStructure.amount),
-          method,
-          status: method === 'CASH' ? 'success' : 'pending',
-          receiptNumber,
-          idempotencyKey: idempotency_key
-        }
-      });
-
-      if (method === 'CHEQUE') {
-        await tx.chequeRecord.create({
-          data: {
-            transactionId: transaction.id,
-            chequeNo: cheque_no || '',
-            bank: bank || '',
-            depositStatus: 'deposit_pending'
-          }
-        });
-      }
-
-      if (method === 'CASH') {
-        await tx.feeAssignment.update({
-          where: { id: assignment.id },
-          data: { status: 'paid' }
-        });
-
-        const receiptBase64 = await generateReceiptBase64(
-          transaction,
-          assignment.student,
-          assignment.student.guardian,
-          assignment.feeStructure
-        );
-
-        await tx.receipt.create({
-          data: {
-            transactionId: transaction.id,
-            receiptNumber,
-            fileUrl: receiptBase64
-          }
-        });
-      }
-
-      await tx.auditLog.create({
-        data: {
-          actorId,
-          actorRole: req.user.role,
-          action: 'collect_offline_payment',
-          entity: 'transaction',
-          entityId: transaction.id,
-          before: null,
-          after: { transactionId: transaction.id, method, amount: transaction.amount, idempotency_key }
-        }
-      });
-    });
-
+    const transaction = method === 'CASH'
+      ? await collectCash({ feeAssignmentId: fee_assignment_id, amount, idempotencyKey: idempotency_key, actorId, actorRole: req.user.role, deposited: false })
+      : await collectCheque({ feeAssignmentId: fee_assignment_id, amount, chequeNo: cheque_no, bank, idempotencyKey: idempotency_key, actorId, actorRole: req.user.role });
     return res.status(201).json(transaction);
 
   } catch (error) {
