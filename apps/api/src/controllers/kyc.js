@@ -1,6 +1,7 @@
 const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { encrypt } = require('../utils/crypto');
+const { maskDocumentRef, minimizeOcrData } = require('../domain/privacy/masking');
 
 // Helper to check string match (case-insensitive, ignores minor spaces)
 const isNameMatch = (name1, name2) => {
@@ -61,38 +62,31 @@ const submitKYC = async (req, res) => {
     }
 
 
-    // Compare OCR parsed results with form inputs
-    const ocrName = ocrData.name;
-    const ocrDob = ocrData.dob;
+        const safeOcrData = minimizeOcrData(ocrData);
+    const ocrName = safeOcrData.name;
+    const ocrDob = safeOcrData.dob;
 
     const nameMatches = isNameMatch(student.name, ocrName);
     const dobMatches = isDateMatch(student.dob, ocrDob);
 
-    // Flag if there's any mismatch
     const ocrFlagged = !nameMatches || !dobMatches;
 
-    // Mask docRef to last 4 digits (e.g. **** **** 1234) for security/compliance
-    let maskedDocRef = null;
-    if (docRef) {
-      const cleanRef = docRef.replace(/\s/g, '');
-      maskedDocRef = cleanRef.length >= 4 ? `**** **** ${cleanRef.slice(-4)}` : cleanRef;
-    }
+    const maskedDocRef = maskDocumentRef(docRef);
 
-    // Create or Update StudentKYC record
     const studentKyc = await prisma.studentKYC.upsert({
       where: { studentId: Number(studentId) },
       update: {
         docType,
         docRef: maskedDocRef,
-        ocrData,
+        ocrData: safeOcrData,
         ocrFlagged,
-        verifiedAt: null // Reset verification status on new upload
+        verifiedAt: null
       },
       create: {
         studentId: Number(studentId),
         docType,
         docRef: maskedDocRef,
-        ocrData,
+        ocrData: safeOcrData,
         ocrFlagged
       }
     });
