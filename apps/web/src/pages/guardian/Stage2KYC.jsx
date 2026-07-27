@@ -109,7 +109,7 @@ export default function Stage2KYC({ studentId, onSuccess, onCancel }) {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+          <div className="layout-row" style={{ marginTop: '20px' }}>
             <button type="submit" className="btn" style={{ flex: 1 }} disabled={loading}>
               {loading ? 'Submitting...' : 'Submit Details'}
             </button>

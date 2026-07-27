@@ -225,10 +225,10 @@ export default function Approvals() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+    <div className="layout-stack">
       
       {/* Sub tabs nav */}
-      <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px' }}>
+      <div className="layout-row" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '10px' }}>
         <button
           type="button"
           onClick={() => { setActiveTab('ocr'); setError(null); setSuccess(null); }}
@@ -273,8 +273,8 @@ export default function Approvals() {
                 required
               />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="submit" className="btn btn-error" style={{ background: 'var(--error)' }}>
+            <div className="layout-row">
+              <button type="submit" className="btn btn-error">
                 Confirm Reject
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setRejectId(null)}>
@@ -300,8 +300,8 @@ export default function Approvals() {
                 required
               />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="submit" className="btn" style={{ background: '#6366f1' }} disabled={loading}>
+            <div className="layout-row">
+              <button type="submit" className="btn" disabled={loading}>
                 {loading ? 'Processing Reversal...' : 'Confirm Refund'}
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setRefundTxId(null)} disabled={loading}>
@@ -314,7 +314,7 @@ export default function Approvals() {
 
       {/* OCR Tab content */}
       {activeTab === 'ocr' && (
-        <div className="glass-panel" style={{ padding: '40px' }}>
+        <div className="glass-panel panel-padded">
           <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Pending Identity & Document Approvals</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '24px' }}>
             Review minor details submitted by parents alongside automated OCR extraction data.
@@ -387,16 +387,15 @@ export default function Approvals() {
                       {!isOverridingThis && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '150px' }}>
                           <button 
-                            className="btn" 
-                            style={{ padding: '8px 16px', fontSize: '0.8rem' }}
+                            className="btn btn-sm"
                             onClick={() => handleVerifyDirect(student.id)}
                             disabled={loading}
                           >
                             Verify & Approve
                           </button>
                           <button 
-                            className="btn btn-secondary" 
-                            style={{ padding: '8px 16px', fontSize: '0.8rem', border: '1px dashed var(--secondary)' }}
+                            className="btn btn-secondary btn-sm"
+                            style={{ border: '1px dashed var(--secondary)' }}
                             onClick={() => handleOpenOverride(student)}
                             disabled={loading}
                           >
@@ -449,11 +448,11 @@ export default function Approvals() {
                               />
                             </div>
                           </div>
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button type="submit" className="btn" disabled={loading} style={{ padding: '8px 16px', fontSize: '0.8rem' }}>
+                          <div className="layout-row">
+                            <button type="submit" className="btn btn-sm" disabled={loading}>
                               {loading ? 'Submitting Override...' : 'Submit Correction & Approve'}
                             </button>
-                            <button type="button" className="btn btn-secondary" onClick={handleCloseOverride} style={{ padding: '8px 16px', fontSize: '0.8rem' }}>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={handleCloseOverride}>
                               Cancel
                             </button>
                           </div>
@@ -470,7 +469,7 @@ export default function Approvals() {
 
       {/* Waiver Tab content */}
       {activeTab === 'waivers' && (
-        <div className="glass-panel" style={{ padding: '40px' }}>
+        <div className="glass-panel panel-padded">
           <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Waiver & Penalty Requests Approvals</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '24px' }}>
             Review pending waiver requests or penalty fee additions submitted by cashier staff.
@@ -527,7 +526,7 @@ export default function Approvals() {
 
       {/* Refunds Tab content */}
       {activeTab === 'refunds' && (
-        <div className="glass-panel" style={{ padding: '40px' }}>
+        <div className="glass-panel panel-padded">
           <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Refund Processing & Bank Reversals</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '24px' }}>
             Process bank reversals for educational fee payments. Stage 2 KYC banking details must be completed by parents prior to refund execution.

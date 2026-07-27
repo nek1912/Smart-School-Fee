@@ -75,7 +75,7 @@ export default function Expenses() {
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px', alignItems: 'start' }}>
       
       {/* Log Expense Form */}
-      <div className="glass-panel" style={{ padding: '30px' }}>
+      <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>Log Maintenance Expense</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
           Record school operational expenses (utilities, cleaning, payroll, repairs).
@@ -143,7 +143,7 @@ export default function Expenses() {
       </div>
 
       {/* Expenses History List */}
-      <div className="glass-panel" style={{ padding: '30px' }}>
+      <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>Operational Expenses Log</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
           Showing recent maintenance entries logged by administrators.

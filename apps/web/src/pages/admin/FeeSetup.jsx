@@ -186,10 +186,10 @@ export default function FeeSetup() {
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px', alignItems: 'start' }}>
       
       {/* Column 1: Forms */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+      <div className="layout-stack-lg">
         
         {/* CRUD Form */}
-        <div className="glass-panel" style={{ padding: '30px' }}>
+        <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>
           {editingId ? 'Edit Structure (Generates Version)' : 'Create Fee Structure'}
         </h2>
@@ -291,7 +291,7 @@ export default function FeeSetup() {
       </div>
 
       {/* Assign Fee Form */}
-      <div className="glass-panel" style={{ padding: '30px' }}>
+      <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Assign Fee to Student</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
           Assign a defined fee structure component directly to a student ward profile.
@@ -360,7 +360,7 @@ export default function FeeSetup() {
       </div>
 
       {/* Version List Table */}
-      <div className="glass-panel" style={{ padding: '30px' }}>
+      <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Active Fee Components</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
           Registered fee structures and version records stored in the system.

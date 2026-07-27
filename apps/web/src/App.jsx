@@ -174,10 +174,10 @@ export default function App() {
     const role = user.role;
     return (
       <AppShell user={user} onLogout={handleLogout}>
-        <main style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px' }}>
+        <main className="layout-stack-lg">
 
           {role === 'guardian' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            <div className="layout-stack">
               <RoleNav role={role} activeTab={guardianTab} onChange={setGuardianTab} />
 
               {guardianTab === 'wards' && (
@@ -187,12 +187,12 @@ export default function App() {
                     Under the **Digital Personal Data Protection (DPDP) Act 2023**, you must explicitly consent to the collection and processing of your minor ward's educational and payment data.
                   </p>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div className="layout-stack-md">
                     {students.length === 0 ? (
                       <EmptyState title="No Wards Found" message="No students registered under your guardian account." />
                     ) : (
                       students.map(student => (
-                        <div key={student.id} className="glass-panel" style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15, 23, 42, 0.2)' }}>
+                        <div key={student.id} className="glass-panel flex-between glass-panel-sm" style={{ background: 'rgba(15, 23, 42, 0.2)' }}>
                           <div>
                             <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>{student.name}</h3>
                             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
@@ -251,12 +251,12 @@ export default function App() {
           )}
 
           {role === 'admin' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            <div className="layout-stack">
               <RoleNav role={role} activeTab={adminTab} onChange={setAdminTab} />
 
               {adminTab === 'cashiers' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-                  <div className="glass-panel" style={{ padding: '40px' }}>
+                <div className="layout-grid-2">
+                  <div className="glass-panel panel-padded">
                     <h2 style={{ fontSize: '1.25rem', marginBottom: '20px' }}>Register New Cashier</h2>
                     <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.875rem' }}>
                       Create secure cashier accounts. Cashiers can receive fee payments but cannot modify structural configurations.
@@ -286,13 +286,13 @@ export default function App() {
                     </form>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                    <div className="glass-panel" style={{ padding: '30px' }}>
+                  <div className="layout-stack-lg">
+                    <div className="glass-panel panel-compact">
                       <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>Registered Cashier Staff</h2>
                       <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.85rem' }}>
                         Showing active cashier staff accounts fetched dynamically from the database.
                       </p>
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="overflow-table">
                         {cashiersList.length === 0 ? (
                           <EmptyState title="No Cashiers" message="No cashier accounts registered yet." />
                         ) : (
@@ -322,12 +322,12 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="glass-panel" style={{ padding: '30px' }}>
+                    <div className="glass-panel panel-compact">
                       <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>System Audit Logs (Recent Operations)</h2>
                       <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.85rem' }}>
                         Showing mutations tracked in the PostgreSQL `audit_logs` table (read-only for security auditing).
                       </p>
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="overflow-table">
                         {auditLogs.length === 0 ? (
                           <EmptyState title="No Audit Logs" message="No system logs recorded yet." />
                         ) : (
@@ -396,7 +396,7 @@ export default function App() {
           )}
 
           {role === 'cashier' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            <div className="layout-stack">
               <RoleNav role={role} activeTab={cashierTab} onChange={setCashierTab} />
 
               {cashierTab === 'collect' && <Collections />}

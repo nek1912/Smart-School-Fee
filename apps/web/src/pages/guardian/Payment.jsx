@@ -79,10 +79,10 @@ export default function Payment() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+    <div className="layout-stack-lg">
       
       {/* Ward Selector Section */}
-      <div className="glass-panel" style={{ padding: '30px' }}>
+      <div className="glass-panel panel-compact">
         <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Select Student Profile</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.875rem' }}>
           Select one of your linked children to view outstanding school fees and clear transactions.
@@ -93,7 +93,7 @@ export default function Payment() {
             No registered student records found.
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div className="layout-row">
             {students.map(s => (
               <button
                 key={s.id}
@@ -111,8 +111,8 @@ export default function Payment() {
 
       {/* Outstanding Fees Panel */}
       {selectedStudent && (
-        <div className="glass-panel" style={{ padding: '40px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '20px' }}>
+        <div className="glass-panel panel-padded">
+          <div className="flex-between" style={{ marginBottom: '25px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '20px' }}>
             <div>
               <h2 style={{ fontSize: '1.35rem' }}>Fee Ledger: {selectedStudent.name}</h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>

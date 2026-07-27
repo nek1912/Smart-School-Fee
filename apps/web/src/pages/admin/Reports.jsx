@@ -48,10 +48,10 @@ export default function Reports() {
   };
 
   return (
-    <div className="frosted-glass-card" style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="frosted-glass-card layout-stack-md" style={{ padding: '30px' }}>
       
       {/* Header and Export Action */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+      <div className="flex-between-wrap">
         <div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 5px 0', color: '#0f172a' }}>
             Revenue & Collection Reports Ledger
@@ -81,7 +81,7 @@ export default function Reports() {
       </div>
 
       {/* Query Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px' }}>
+      <div className="layout-grid-2-auto">
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label" style={{ color: '#475569', fontSize: '0.75rem', fontWeight: 600 }}>Class / Grade</label>
           <select 
@@ -127,10 +127,10 @@ export default function Reports() {
           Generating report data...
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="layout-stack-md">
           
           {/* Summary Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div className="grid-2">
             <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', padding: '20px', borderRadius: '12px' }}>
               <span style={{ fontSize: '0.75rem', color: '#047857', fontWeight: 600, textTransform: 'uppercase' }}>
                 Total Revenue Collected

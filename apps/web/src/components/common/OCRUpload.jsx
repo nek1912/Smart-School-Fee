@@ -144,8 +144,8 @@ export default function OCRUpload({ docType, onOCRComplete }) {
 
   return (
     <div className="glass-panel" style={{ padding: '20px', marginTop: '15px', background: 'rgba(255,255,255,0.02)' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="layout-stack-sm">
+        <div className="flex-between">
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
             IDENTITY DOCUMENT OCR ({docType.toUpperCase()})
           </span>

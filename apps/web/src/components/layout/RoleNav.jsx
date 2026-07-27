@@ -21,7 +21,7 @@ const tabsByRole = {
 
 export default function RoleNav({ role, activeTab, onChange }) {
   return (
-    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', borderBottom: '1px solid var(--glass-border)', paddingBottom: '15px' }}>
+    <div className="layout-row" style={{ gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '15px' }}>
       {(tabsByRole[role] || []).map(([key, label]) => (
         <button key={key} type="button" className={`btn ${activeTab === key ? '' : 'btn-secondary'}`} onClick={() => onChange(key)}>
           {label}

@@ -77,7 +77,7 @@ export default function Receipts() {
   const successfulTxns = transactions.filter(t => t.status === 'success' || t.status === 'reversed');
 
   return (
-    <div className="glass-panel" style={{ padding: '40px' }}>
+    <div className="glass-panel panel-padded">
       <div style={{ marginBottom: '25px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '20px' }}>
         <h2 style={{ fontSize: '1.5rem' }}>Receipt History & Ledger</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
@@ -107,15 +107,15 @@ export default function Receipts() {
       )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        <div className="empty-state text-sm" style={{ fontSize: '0.9rem' }}>
           Loading transaction receipts...
         </div>
       ) : successfulTxns.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '45px 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        <div className="empty-state-lg text-sm" style={{ fontSize: '0.9rem' }}>
           No successful payments or receipts found in your history log.
         </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="overflow-table">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
@@ -153,8 +153,7 @@ export default function Receipts() {
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                       <button
                         type="button"
-                        className="btn"
-                        style={{ padding: '8px 16px', fontSize: '0.8rem' }}
+                        className="btn btn-sm"
                         onClick={() => handleDownloadReceipt(tx.id, tx.receiptNumber)}
                       >
                         Download PDF
@@ -162,8 +161,8 @@ export default function Receipts() {
                       {tx.status === 'success' && (
                         <button
                           type="button"
-                          className="btn btn-secondary"
-                          style={{ padding: '8px 16px', fontSize: '0.8rem', border: '1px solid var(--error)', color: 'var(--error)' }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ border: '1px solid var(--error)', color: 'var(--error)' }}
                           onClick={() => handleRequestRefund(tx)}
                         >
                           Request Refund
