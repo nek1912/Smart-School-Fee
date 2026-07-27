@@ -11,6 +11,7 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { authenticate, checkRole } = require('./middlewares/rbac');
 const { auditLogger } = require('./middlewares/audit');
 const { validateBody } = require('./middlewares/validate');
+const healthRouter = require('./routes/health');
 const paymentSchemas = require('./schemas/paymentSchemas');
 const feeSchemas = require('./schemas/feeSchemas');
 const authController = require('./controllers/auth');
@@ -47,6 +48,9 @@ const authRateLimiter = rateLimit({
 app.get('/', (req, res) => {
   res.json({ message: 'Smart School FinTech API is running' });
 });
+
+// Health check routes (before authenticated routes)
+app.use(healthRouter);
 
 // Authentication Routes
 app.post('/api/auth/signup', authRateLimiter, authController.signup);
