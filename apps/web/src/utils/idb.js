@@ -52,3 +52,25 @@ export const deletePaymentFromQueue = async (idempotencyKey) => {
     request.onerror = () => reject(request.error);
   });
 };
+
+export const updatePaymentInQueue = async (idempotencyKey, patch) => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const getRequest = store.get(idempotencyKey);
+    getRequest.onsuccess = () => {
+      const existing = getRequest.result;
+      if (!existing) return resolve(false);
+      const putRequest = store.put({ ...existing, ...patch, updated_at: new Date().toISOString() });
+      putRequest.onsuccess = () => resolve(true);
+      putRequest.onerror = () => reject(putRequest.error);
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+};
+
+export const clearSyncedPayments = async () => {
+  const payments = await getQueuedPayments();
+  await Promise.all(payments.filter(p => p.local_status === 'synced').map(p => deletePaymentFromQueue(p.idempotency_key)));
+};

@@ -7,6 +7,7 @@ const { generateReceiptBase64 } = require('../utils/receipts');
 const canAutoPromoteMockPayment = (nodeEnv) => nodeEnv !== 'production';
 const { collectCash, collectCheque, markUpiSuccess, markUpiFailed } = require('../domain/payments/paymentService');
 const { requireConfig } = require('../config/env');
+const { syncOfflinePayments } = require('../domain/payments/offlineSyncService');
 
 // Initiate UPI Checkout (Sandbox)
 const initiatePayment = async (req, res) => {
@@ -405,53 +406,17 @@ const collectOffline = async (req, res) => {
 const syncOffline = async (req, res) => {
   try {
     const { payments } = req.body;
-    if (!payments || !Array.isArray(payments)) {
-      return res.status(200).json({ synced: true, count: 0 });
-    }
-
-    let count = 0;
-    for (const payment of payments) {
-      try {
-        const mockReq = {
-          body: {
-            student_id: payment.student_id,
-            fee_assignment_id: payment.fee_assignment_id,
-            amount: payment.amount,
-            method: payment.method,
-            cheque_no: payment.cheque_no,
-            bank: payment.bank,
-            idempotency_key: payment.idempotency_key
-          },
-          user: req.user
-        };
-
-        let mockResStatus = 200;
-        const mockRes = {
-          status: (code) => {
-            mockResStatus = code;
-            return mockRes;
-          },
-          json: (data) => {
-            return mockRes;
-          }
-        };
-
-        await collectOffline(mockReq, mockRes);
-        if (mockResStatus === 200 || mockResStatus === 201) {
-          count++;
-        }
-      } catch (err) {
-        console.error('Sync item failure:', err);
-      }
-    }
-
-    return res.status(200).json({ synced: true, count });
+    const result = await syncOfflinePayments({
+      payments,
+      actorId: req.user.id,
+      actorRole: req.user.role
+    });
+    return res.status(200).json(result);
   } catch (error) {
     console.error('Sync offline payments error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
-
 const depositCash = async (req, res) => {
   try {
     const { id } = req.params;

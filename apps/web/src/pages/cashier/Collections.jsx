@@ -162,7 +162,9 @@ export default function Collections() {
       bank: method === 'CHEQUE' ? bank : undefined,
       idempotency_key: idempotencyKey,
       timestamp: new Date().toISOString(),
-      token: token // Attach cashier session token for background sync authentication
+      local_status: 'queued',
+      attempts: 0,
+      last_error: null
     };
 
     // If browser is offline, queue to IndexedDB directly
