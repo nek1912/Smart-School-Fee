@@ -3,7 +3,9 @@ const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { CASHFREE_CLIENT_ID, CASHFREE_CLIENT_SECRET, CASHFREE_BASE_URL, verifySignature } = require('../config/cashfree');
 const { generateReceiptBase64 } = require('../utils/receipts');
-const { collectCash, collectCheque } = require('../domain/payments/paymentService');
+
+const canAutoPromoteMockPayment = (nodeEnv) => nodeEnv !== 'production';
+const { collectCash, collectCheque, markUpiSuccess, markUpiFailed } = require('../domain/payments/paymentService');
 const { requireConfig } = require('../config/env');
 
 // Initiate UPI Checkout (Sandbox)
@@ -202,90 +204,12 @@ const handleWebhook = async (req, res) => {
       return res.status(200).json({ status: 'already_processed' });
     }
 
-    if (orderStatus === 'PAID' || orderStatus === 'SUCCESS' || orderStatus === 'SUCCESSFUL') {
-      // Process successful payment inside transaction
-      await prisma.$transaction(async (tx) => {
-        // 1. Generate sequential receipt number
-        const currentYear = new Date().getFullYear();
-        const successTxs = await tx.transaction.findMany({
-          where: {
-            status: 'success',
-            receiptNumber: { startsWith: `REC-${currentYear}-` }
-          }
-        });
-
-        let nextNum = 1;
-        if (successTxs.length > 0) {
-          const nums = successTxs.map(t => {
-            const parts = t.receiptNumber.split('-');
-            if (parts.length === 3) {
-              const seq = parseInt(parts[2], 10);
-              return isNaN(seq) ? 0 : seq;
-            }
-            return 0;
-          });
-          nextNum = Math.max(...nums) + 1;
-        }
-        const receiptNumber = `REC-${currentYear}-${String(nextNum).padStart(4, '0')}`;
-
-        // 2. Update transaction
-        const updatedTx = await tx.transaction.update({
-          where: { id: transaction.id },
-          data: {
-            status: 'success',
-            receiptNumber
-          }
-        });
-
-        // 3. Mark fee assignment paid
-        await tx.feeAssignment.update({
-          where: { id: transaction.feeAssignmentId },
-          data: { status: 'paid' }
-        });
-
-        // 4. Generate base64 PDF receipt document
-        const receiptBase64 = await generateReceiptBase64(
-          updatedTx,
-          transaction.student,
-          transaction.student.guardian,
-          transaction.feeAssignment.feeStructure
-        );
-
-        // 5. Store receipt
-        await tx.receipt.create({
-          data: {
-            transactionId: transaction.id,
-            receiptNumber,
-            fileUrl: receiptBase64
-          }
-        });
-
-        // 6. Send notification (Mock SMS / Email)
-        console.log(`\n--- [SMS GATEWAY NOTIFICATION] ---\nTo: ${transaction.student.guardian.mobile}\nDear ${transaction.student.guardian.name}, a payment of INR ${Number(transaction.amount).toFixed(2)} for your ward ${transaction.student.name} was successfully received. Receipt Number: ${receiptNumber}\n-----------------------------------\n`);
-
-        // 7. Log audit trail
-        await tx.auditLog.create({
-          data: {
-            actorId: transaction.student.guardianId,
-            actorRole: 'guardian',
-            action: 'payment_success',
-            entity: 'transaction',
-            entityId: transaction.id,
-            before: { id: transaction.id, status: 'pending' },
-            after: { id: transaction.id, status: 'success', receiptNumber }
-          }
-        });
-      });
-
+          if (orderStatus === 'PAID' || orderStatus === 'SUCCESS' || orderStatus === 'SUCCESSFUL') {
+      await markUpiSuccess({ orderId, gatewayTxnId });
       return res.status(200).json({ status: 'success' });
-    } else {
-      // Mark transaction as failed
-      await prisma.transaction.update({
-        where: { id: transaction.id },
-        data: { status: 'failed' }
-      });
-      return res.status(200).json({ status: 'failed' });
     }
+    await markUpiFailed({ orderId, reason: orderStatus });
+    return res.status(200).json({ status: 'failed' });
 
   } catch (error) {
     console.error('Webhook processing error:', error);
@@ -318,88 +242,9 @@ const verifyPayment = async (req, res) => {
       return res.status(404).json({ error: 'Transaction not found' });
     }
 
-    // Auto-promote mock checkout to SUCCESS on verify if it is still pending
-    if (tx.status === 'pending') {
-      try {
-        await prisma.$transaction(async (prismaTx) => {
-          // 1. Generate sequential receipt number
-          const currentYear = new Date().getFullYear();
-          const successTxs = await prismaTx.transaction.findMany({
-            where: {
-              status: 'success',
-              receiptNumber: { startsWith: `REC-${currentYear}-` }
-            }
-          });
-
-          let nextSeq = 1;
-          if (successTxs.length > 0) {
-            const nums = successTxs.map(t => {
-              const parts = t.receiptNumber.split('-');
-              if (parts.length === 3) {
-                const seq = parseInt(parts[2], 10);
-                return isNaN(seq) ? 0 : seq;
-              }
-              return 0;
-            });
-            nextSeq = Math.max(...nums) + 1;
-          }
-          const receiptNumber = `REC-${currentYear}-${String(nextSeq).padStart(4, '0')}`;
-
-          // 2. Update transaction status
-          const updatedTx = await prismaTx.transaction.update({
-            where: { id: tx.id },
-            data: {
-              status: 'success',
-              receiptNumber,
-              gatewayRef: order_id
-            }
-          });
-
-          // 3. Update FeeAssignment status
-          await prismaTx.feeAssignment.update({
-            where: { id: tx.feeAssignmentId },
-            data: { status: 'paid' }
-          });
-
-          // 4. Generate base64 PDF receipt document
-          const receiptBase64 = await generateReceiptBase64(
-            updatedTx,
-            tx.student,
-            tx.student.guardian,
-            tx.feeAssignment.feeStructure
-          );
-
-          // 5. Create Receipt record
-          await prismaTx.receipt.create({
-            data: {
-              transactionId: tx.id,
-              receiptNumber,
-              fileUrl: receiptBase64
-            }
-          });
-
-          // 6. Send notification (Mock SMS / Email)
-          console.log(`\n--- [SMS GATEWAY NOTIFICATION] ---\nTo: ${tx.student.guardian.mobile}\nDear ${tx.student.guardian.name}, a payment of INR ${Number(tx.amount).toFixed(2)} for your ward ${tx.student.name} was successfully received. Receipt Number: ${receiptNumber}\n-----------------------------------\n`);
-
-          // 7. Log audit trail
-          await prismaTx.auditLog.create({
-            data: {
-              actorId: tx.student.guardianId,
-              actorRole: 'guardian',
-              action: 'payment_success',
-              entity: 'transaction',
-              entityId: tx.id,
-              before: { id: tx.id, status: 'pending' },
-              after: { id: updatedTx.id, status: 'success', receiptNumber }
-            }
-          });
-
-          // Update local tx variable for response
-          tx = { ...updatedTx, receiptNumber };
-        });
-      } catch (innerErr) {
-        console.error('Failed to auto-promote mock payment:', innerErr);
-      }
+    // Auto-promote mock checkout only in non-production environments
+    if (tx.status === 'pending' && canAutoPromoteMockPayment(requireConfig().nodeEnv)) {
+      tx = await markUpiSuccess({ orderId: order_id, gatewayTxnId: `MOCK_${Date.now()}`, actorId: tx.student.guardianId });
     }
 
     return res.status(200).json({

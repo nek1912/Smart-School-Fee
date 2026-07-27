@@ -105,8 +105,64 @@ const collectCheque = async ({ feeAssignmentId, amount, chequeNo, bank, idempote
   });
 };
 
+const markUpiSuccess = async ({ orderId, gatewayTxnId, actorId = null }) => {
+  return prisma.$transaction(async (tx) => {
+    const transaction = await tx.transaction.findFirst({
+      where: { gatewayRef: orderId },
+      include: { student: { include: { guardian: true } }, feeAssignment: { include: { feeStructure: true } } }
+    });
+    if (!transaction) throw Object.assign(new Error('Transaction reference not found'), { statusCode: 404 });
+    if (transaction.status === 'success') return transaction;
+
+    const updated = await tx.transaction.update({
+      where: { id: transaction.id },
+      data: { status: 'success', gatewayRef: orderId }
+    });
+    const receiptResult = await createReceiptForTransaction({
+      tx,
+      transaction: updated,
+      student: transaction.student,
+      guardian: transaction.student.guardian,
+      feeStructure: transaction.feeAssignment.feeStructure
+    });
+    await tx.feeAssignment.update({ where: { id: transaction.feeAssignmentId }, data: { status: 'paid' } });
+    await createLedgerEntry({
+      tx,
+      transactionId: transaction.id,
+      studentId: transaction.studentId,
+      type: 'payment',
+      direction: 'credit',
+      amount: transaction.amount,
+      reference: gatewayTxnId || orderId,
+      note: 'UPI payment success',
+      createdById: actorId
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: transaction.student.guardianId,
+        actorRole: 'guardian',
+        action: 'payment_success',
+        entity: 'transaction',
+        entityId: transaction.id,
+        before: { id: transaction.id, status: transaction.status },
+        after: { id: transaction.id, status: 'success', receiptNumber: receiptResult.receiptNumber }
+      }
+    });
+    return { ...receiptResult.transaction, receiptNumber: receiptResult.receiptNumber };
+  });
+};
+
+const markUpiFailed = async ({ orderId, reason = 'Gateway marked payment failed' }) => {
+  return prisma.transaction.updateMany({
+    where: { gatewayRef: orderId, status: 'pending' },
+    data: { status: 'failed' }
+  });
+};
+
 module.exports = {
   assertAssignmentPayable,
   collectCash,
-  collectCheque
+  collectCheque,
+  markUpiSuccess,
+  markUpiFailed
 };
