@@ -6,27 +6,52 @@ const getDefaulterData = async (sortBy, classFilter) => {
 
   const assignments = await prisma.feeAssignment.findMany({
     where,
-    include: { student: true, feeStructure: true }
+    include: {
+      student: {
+        include: {
+          guardian: true,
+          transactions: { where: { status: 'failed' } }
+        }
+      },
+      feeStructure: true,
+      waiverPenalties: { where: { status: 'approved' } }
+    }
   });
 
   const now = new Date();
-  const defaulters = assignments
-    .filter(a => a.dueDate && now > new Date(a.dueDate))
-    .map(a => {
-      const overdueDays = Math.floor((now - new Date(a.dueDate)) / (1000 * 60 * 60 * 24));
-      const overdueAmount = Number(a.feeStructure.amount);
-      const riskPct = Math.min(99, Math.floor((overdueDays / 90) * 100));
-      return {
-        student_id: a.student.id,
-        name: a.student.name,
-        class: a.student.class,
-        overdue_days: overdueDays,
-        overdue_amount: overdueAmount,
-        default_risk_pct: riskPct,
-        guardian_name: a.student.guardian?.name || null,
-        guardian_mobile: a.student.guardian?.mobile || null
-      };
+  const defaulters = assignments.map(a => {
+    let overdueAmount = Number(a.feeStructure.amount);
+    a.waiverPenalties.forEach(wp => {
+      if (wp.type === 'penalty') overdueAmount += Number(wp.amount);
+      else if (wp.type === 'waiver') overdueAmount -= Number(wp.amount);
     });
+
+    const dueDate = new Date(a.dueDate);
+    const diffTime = Math.max(0, now - dueDate);
+    const overdueDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    const failedCount = a.student.transactions.length;
+    const isKycComplete = a.student.status === 'active';
+
+    let riskFactor = overdueDays * 3;
+    riskFactor += failedCount * 20;
+    if (isKycComplete) riskFactor -= 15;
+    else riskFactor += 15;
+    if (overdueAmount > 15000) riskFactor += 15;
+    else if (overdueAmount < 5000) riskFactor -= 10;
+    const defaultRiskPct = Math.min(98, Math.max(5, riskFactor));
+
+    return {
+      student_id: a.student.id,
+      name: a.student.name,
+      class: a.student.class,
+      overdue_days: overdueDays,
+      overdue_amount: overdueAmount,
+      default_risk_pct: defaultRiskPct,
+      guardian_name: a.student.guardian?.name || null,
+      guardian_mobile: a.student.guardian?.mobile || null
+    };
+  });
 
   defaulters.sort((a, b) => {
     if (sortBy === 'days') return b.overdue_days - a.overdue_days;

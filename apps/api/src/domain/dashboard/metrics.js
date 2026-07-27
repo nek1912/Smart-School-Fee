@@ -6,7 +6,7 @@ const getMetricsData = async () => {
     prisma.transaction.aggregate({ where: { status: 'reversed' }, _sum: { amount: true } }),
     prisma.transaction.aggregate({ where: { method: 'CASH', depositedAt: null, status: 'success' }, _sum: { amount: true } }),
     prisma.feeAssignment.findMany({ where: { status: { in: ['pending', 'overdue'] } }, include: { feeStructure: true, waiverPenalties: { where: { status: 'approved' } } } }),
-    prisma.transaction.aggregate({ where: { status: 'success', createdAt: { gte: (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })() } }, _sum: { amount: true } }),
+    prisma.transaction.aggregate({ where: { status: 'success', createdAt: { gte: (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })(), lte: (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })() } }, _sum: { amount: true } }),
     prisma.transaction.aggregate({ where: { status: 'success', method: { in: ['CASH', 'CHEQUE'] }, NOT: { depositedAt: null }, receiptRecord: { isNot: null } }, _sum: { amount: true } })
   ]);
 

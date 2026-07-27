@@ -21,7 +21,7 @@ const getRevenueBreakdown = async (req, res, next) => {
 
 const getDefaulters = async (req, res, next) => {
   try {
-    const { sort_by = 'risk', filter_class } = req.query;
+    const { sort_by = 'days', filter_class } = req.query;
     const data = await getDefaulterData(sort_by, filter_class);
     return res.status(200).json(data);
   } catch (err) { next(err); }

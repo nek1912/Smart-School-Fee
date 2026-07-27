@@ -3,10 +3,12 @@ const prisma = require('../../config/db');
 const getRevenueData = async (period, classFilter) => {
   const now = new Date();
   let startDate;
-  switch (period) {
-    case 'daily': startDate = new Date(now.setHours(0,0,0,0)); break;
-    case 'weekly': startDate = new Date(now.setDate(now.getDate()-7)); break;
-    case 'monthly': default: startDate = new Date(now.setMonth(now.getMonth()-1)); break;
+  if (period === 'daily') {
+    startDate = new Date(now.setHours(0, 0, 0, 0));
+  } else if (period === 'weekly') {
+    startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  } else {
+    startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   }
 
   const where = { status: 'success', createdAt: { gte: startDate } };
