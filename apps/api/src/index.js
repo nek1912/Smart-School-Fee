@@ -1,13 +1,13 @@
 const express = require('express');
-// Force nodemon restart to load updated .env keys
 const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
+const { requestId, securityHeaders, corsOptions } = require('./middlewares/security');
+const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { authenticate, checkRole } = require('./middlewares/rbac');
 const { auditLogger } = require('./middlewares/audit');
 const authController = require('./controllers/auth');
@@ -22,21 +22,22 @@ const expensesController = require('./controllers/expenses');
 const dashboardController = require('./controllers/dashboard');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const config = require('./config/env').requireConfig();
+const PORT = config.port;
 
-// Standard Middlewares
-app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
+app.use(requestId);
+app.use(securityHeaders);
+app.use(cors(corsOptions()));
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 
-// Rate Limiting
 const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 auth requests per window
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV !== 'production',
+  skip: () => config.nodeEnv !== 'production',
 });
 
 // Root route
@@ -345,16 +346,8 @@ app.get(
   }
 );
 
-// Fallback for 404 routes
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled Server Error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
