@@ -289,6 +289,30 @@ app.post(
   checkRole(['admin', 'cashier']),
   reconController.uploadStatement
 );
+app.get(
+  '/api/reconciliation/history',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.getHistory
+);
+app.get(
+  '/api/reconciliation/:id',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.getBatch
+);
+app.put(
+  '/api/reconciliation/item/:id',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.resolveItem
+);
+app.post(
+  '/api/reconciliation/bulk-action',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.bulkAction
+);
 
 // === WAIVER & PENALTY ROUTES ===
 app.post(
