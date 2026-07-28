@@ -19,16 +19,12 @@ export default function FeeSetup() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Assign Fee Form State
-  const [studentsList, setStudentsList] = useState([]);
-  const [assignForm, setAssignForm] = useState({
-    studentId: '',
-    feeStructureId: '',
-    dueDate: ''
-  });
-  const [assignLoading, setAssignLoading] = useState(false);
-  const [assignError, setAssignError] = useState(null);
-  const [assignSuccess, setAssignSuccess] = useState(null);
+  // Bulk Creation State
+  const [bulkSelectedClasses, setBulkSelectedClasses] = useState([]);
+  const [bulkComponents, setBulkComponents] = useState([{ name: '', amount: '', type: 'tuition' }]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkError, setBulkError] = useState(null);
+  const [bulkSuccess, setBulkSuccess] = useState(null);
 
   // Fetch initial data
   const fetchData = async () => {
@@ -36,68 +32,22 @@ export default function FeeSetup() {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
 
-      const [yearsRes, structuresRes, studentsRes] = await Promise.all([
+      const [yearsRes, structuresRes] = await Promise.all([
         axios.get('/api/academic-years', { headers }),
-        axios.get('/api/fees/structures', { headers }),
-        axios.get('/api/admin/students', { headers })
+        axios.get('/api/fees/structures', { headers })
       ]);
 
       setAcademicYears(yearsRes.data);
       setFeeStructures(structuresRes.data);
-      setStudentsList(studentsRes.data);
 
       // Select default academic year if form is empty
       if (yearsRes.data.length > 0 && !form.academicYearId) {
         setForm(prev => ({ ...prev, academicYearId: yearsRes.data[0].id }));
       }
 
-      // Select defaults for assignment form
-      setAssignForm(prev => ({
-        ...prev,
-        studentId: prev.studentId || (studentsRes.data.length > 0 ? studentsRes.data[0].id.toString() : ''),
-        feeStructureId: prev.feeStructureId || (structuresRes.data.length > 0 ? structuresRes.data[0].id.toString() : '')
-      }));
-
     } catch (err) {
       console.error(err);
       setError('Failed to fetch fee structures, academic years, or student rosters.');
-    }
-  };
-
-  const handleAssignChange = (e) => {
-    setAssignForm({ ...assignForm, [e.target.name]: e.target.value });
-  };
-
-  const handleAssignSubmit = async (e) => {
-    e.preventDefault();
-    setAssignLoading(true);
-    setAssignError(null);
-    setAssignSuccess(null);
-
-    try {
-      const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
-
-      if (!assignForm.studentId || !assignForm.feeStructureId || !assignForm.dueDate) {
-        throw new Error('Please select a student, a fee structure, and set a due date.');
-      }
-
-      await axios.post('/api/fees/assignments', {
-        studentId: Number(assignForm.studentId),
-        feeStructureId: Number(assignForm.feeStructureId),
-        dueDate: assignForm.dueDate
-      }, { headers });
-
-      setAssignSuccess('Fee assigned successfully!');
-      setAssignForm({
-        studentId: '',
-        feeStructureId: '',
-        dueDate: ''
-      });
-    } catch (err) {
-      setAssignError(err.response?.data?.error || err.message || 'Failed to assign fee.');
-    } finally {
-      setAssignLoading(false);
     }
   };
 
@@ -179,6 +129,54 @@ export default function FeeSetup() {
       setError(err.response?.data?.error || 'Failed to save fee structure.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBulkCreate = async (e) => {
+    e.preventDefault();
+    setBulkLoading(true);
+    setBulkError(null);
+    setBulkSuccess(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      if (bulkSelectedClasses.length === 0) {
+        throw new Error('Please select at least one class.');
+      }
+
+      if (bulkComponents.length === 0 || bulkComponents.some(c => !c.name || !c.amount)) {
+        throw new Error('Each component must have a name and amount.');
+      }
+
+      const academicYearId = form.academicYearId || (academicYears[0]?.id);
+      if (!academicYearId) {
+        throw new Error('No academic year selected. Please create an academic year first.');
+      }
+
+      let created = 0;
+      for (const cls of bulkSelectedClasses) {
+        for (const component of bulkComponents) {
+          await axios.post('/api/fees/structures', {
+            name: `${component.name} - ${cls}`,
+            amount: Number(component.amount),
+            type: component.type,
+            appliesTo: cls,
+            academicYearId: Number(academicYearId)
+          }, { headers });
+          created++;
+        }
+      }
+
+      setBulkSuccess(`Successfully created ${created} fee structure(s) across ${bulkSelectedClasses.length} class(es).`);
+      setBulkSelectedClasses([]);
+      setBulkComponents([{ name: '', amount: '', type: 'tuition' }]);
+      fetchData();
+    } catch (err) {
+      setBulkError(err.response?.data?.error || err.message || 'Failed to create bulk fee structures.');
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -290,69 +288,116 @@ export default function FeeSetup() {
         </form>
       </div>
 
-      {/* Assign Fee Form */}
+      {/* Bulk Class Creation Form */}
       <div className="glass-panel panel-compact">
-        <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Assign Fee to Student</h2>
+        <h2 style={{ fontSize: '1.25rem', marginBottom: '15px' }}>Bulk Create Fee for Classes</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-          Assign a defined fee structure component directly to a student ward profile.
+          Create fee structure components for multiple classes at once (Grade 1–10).
         </p>
 
-        {assignError && <div className="alert alert-error">{assignError}</div>}
-        {assignSuccess && <div className="alert alert-success">{assignSuccess}</div>}
+        {bulkError && <div className="alert alert-error">{bulkError}</div>}
+        {bulkSuccess && <div className="alert alert-success">{bulkSuccess}</div>}
 
-        <form onSubmit={handleAssignSubmit}>
+        <form onSubmit={handleBulkCreate}>
           <div className="form-group">
-            <label className="form-label">Select Student</label>
-            <select
-              name="studentId"
-              className="form-input"
-              value={assignForm.studentId}
-              onChange={handleAssignChange}
-              required
-              style={{ background: 'rgba(15, 23, 42, 0.8)' }}
-            >
-              <option value="" disabled>-- Choose a Student --</option>
-              {studentsList.map(student => (
-                <option key={student.id} value={student.id}>
-                  {student.name} ({student.class})
-                </option>
+            <label className="form-label">Select Classes</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+              {['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'].map(cls => (
+                <label key={cls} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={bulkSelectedClasses.includes(cls)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setBulkSelectedClasses([...bulkSelectedClasses, cls]);
+                      } else {
+                        setBulkSelectedClasses(bulkSelectedClasses.filter(c => c !== cls));
+                      }
+                    }}
+                  />
+                  {cls}
+                </label>
               ))}
-            </select>
+            </div>
           </div>
 
           <div className="form-group">
-            <label className="form-label">Select Fee Component</label>
-            <select
-              name="feeStructureId"
-              className="form-input"
-              value={assignForm.feeStructureId}
-              onChange={handleAssignChange}
-              required
-              style={{ background: 'rgba(15, 23, 42, 0.8)' }}
+            <label className="form-label">Fee Components</label>
+            {bulkComponents.map((comp, index) => (
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.75rem' }}>Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={comp.name}
+                    onChange={(e) => {
+                      const updated = [...bulkComponents];
+                      updated[index] = { ...updated[index], name: e.target.value };
+                      setBulkComponents(updated);
+                    }}
+                    placeholder="e.g. Tuition"
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.75rem' }}>Amount (INR)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={comp.amount}
+                    onChange={(e) => {
+                      const updated = [...bulkComponents];
+                      updated[index] = { ...updated[index], amount: e.target.value };
+                      setBulkComponents(updated);
+                    }}
+                    placeholder="e.g. 50000"
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.75rem' }}>Type</label>
+                  <select
+                    className="form-input"
+                    value={comp.type}
+                    onChange={(e) => {
+                      const updated = [...bulkComponents];
+                      updated[index] = { ...updated[index], type: e.target.value };
+                      setBulkComponents(updated);
+                    }}
+                    style={{ background: 'rgba(15, 23, 42, 0.8)' }}
+                  >
+                    <option value="tuition">Tuition</option>
+                    <option value="transport">Transport</option>
+                    <option value="late_fee">Late Fee</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '0.7rem', marginBottom: '1px' }}
+                  onClick={() => {
+                    if (bulkComponents.length > 1) {
+                      setBulkComponents(bulkComponents.filter((_, i) => i !== index));
+                    }
+                  }}
+                  disabled={bulkComponents.length <= 1}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+              onClick={() => setBulkComponents([...bulkComponents, { name: '', amount: '', type: 'tuition' }])}
             >
-              <option value="" disabled>-- Choose a Fee Component --</option>
-              {feeStructures.map(struct => (
-                <option key={struct.id} value={struct.id}>
-                  {struct.name} (v{struct.version} - ₹{Number(struct.amount).toLocaleString('en-IN')})
-                </option>
-              ))}
-            </select>
+              + Add Component
+            </button>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Due Date</label>
-            <input
-              type="date"
-              name="dueDate"
-              className="form-input"
-              value={assignForm.dueDate}
-              onChange={handleAssignChange}
-              required
-            />
-          </div>
-
-          <button type="submit" className="btn" style={{ width: '100%', marginTop: '10px' }} disabled={assignLoading}>
-            {assignLoading ? 'Assigning...' : 'Assign Fee to Student'}
+          <button type="submit" className="btn" style={{ width: '100%', marginTop: '10px' }} disabled={bulkLoading || bulkSelectedClasses.length === 0}>
+            {bulkLoading ? 'Creating...' : `Create for ${bulkSelectedClasses.length} Class(es)`}
           </button>
         </form>
       </div>

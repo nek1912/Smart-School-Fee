@@ -1,6 +1,7 @@
 const tabsByRole = {
   admin: [
     ['dashboard', 'Dashboard'],
+    ['students', 'Students'],
     ['fees', 'Fees'],
     ['approvals', 'Approvals'],
     ['reports', 'Reports'],
@@ -9,7 +10,6 @@ const tabsByRole = {
   ],
   cashier: [
     ['collect', 'Collect'],
-    ['offline', 'Offline Queue'],
     ['deposits', 'Deposits']
   ],
   guardian: [

@@ -366,8 +366,30 @@ const submitStage2KYC = async (req, res, next) => {
 
 const getAllStudents = async (req, res, next) => {
   try {
+    const { search, class: className, division, feesStatus } = req.query;
+
+    const where = {};
+
+    if (search) {
+      where.name = { contains: search, mode: 'insensitive' };
+    }
+
+    if (feesStatus) {
+      where.feesStatus = { equals: feesStatus };
+    }
+
+    if (className) {
+      where.class = { startsWith: className };
+    }
+
+    if (division) {
+      where.class = { ...where.class, endsWith: `-${division}` };
+    }
+
     const students = await prisma.student.findMany({
-      include: { guardian: true, kycRecord: true }
+      where,
+      include: { guardian: true, kycRecord: true },
+      orderBy: { name: 'asc' }
     });
     return res.status(200).json(students);
   } catch (err) {

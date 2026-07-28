@@ -409,12 +409,15 @@ const collectOffline = async (req, res, next) => {
     const actorId = req.user.id;
 
     if (!fee_assignment_id || !method || !idempotency_key) {
-      throw new ValidationError('fee_assignment_id, method and idempotency_key are required');
+      throw new ValidationError('Fee assignment not found. Please assign the fee to the student before collecting payment.');
     }
 
     if (method !== 'CASH' && method !== 'CHEQUE') {
       throw new ValidationError('Offline collection only supports CASH or CHEQUE');
     }
+
+    // Auto-cancel any stale pending transactions before processing new payment
+    await resolvePendingTransaction(Number(fee_assignment_id));
 
     const existingTx = await prisma.transaction.findUnique({
       where: { idempotencyKey: idempotency_key },

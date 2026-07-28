@@ -31,6 +31,7 @@ const checkRole = (allowedRoles) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized: Authentication required' });
     }
+    console.log(`[RBAC] User role: ${req.user.role}, Allowed: [${allowedRoles}]`);
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Forbidden: Access denied' });
     }

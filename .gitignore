@@ -45,5 +45,9 @@ desktop.ini
 coverage/
 .nyc_output
 
+# Project folders
+docs/
+.superpowers/
+
 # Prisma generator output
 /node_modules/@prisma/client

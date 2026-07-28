@@ -17,12 +17,12 @@ import ErrorState from './components/common/ErrorState';
 
 // Cashier & Reconciliation imports
 import Collections from './pages/cashier/Collections';
-import OfflineQueue from './pages/cashier/OfflineQueue';
 import Deposits from './pages/cashier/Deposits';
 import Reconciliation from './pages/admin/Reconciliation';
 import Dashboard from './pages/admin/Dashboard';
 import Reports from './pages/admin/Reports';
 import Expenses from './pages/admin/Expenses';
+import Students from './pages/admin/Students';
 
 export default function App() {
   const { user, token, logout, submitConsent, successMessage, error, clearAlerts } = useAuthStore();
@@ -386,6 +386,7 @@ export default function App() {
               )}
 
               {adminTab === 'dashboard' && <Dashboard setAdminTab={setAdminTab} />}
+              {adminTab === 'students' && <Students />}
               {adminTab === 'fees' && <FeeSetup />}
               {adminTab === 'approvals' && <Approvals />}
               {adminTab === 'reports' && <Reports />}
@@ -400,7 +401,6 @@ export default function App() {
               <RoleNav role={role} activeTab={cashierTab} onChange={setCashierTab} />
 
               {cashierTab === 'collect' && <Collections />}
-              {cashierTab === 'offline' && <OfflineQueue />}
               {cashierTab === 'deposits' && <Deposits />}
             </div>
           )}

@@ -42,8 +42,8 @@ export default function Login({ onNavigate }) {
 
   const handleOtpSubmit = async (e) => {
     e.preventDefault();
-    if (otp.length !== 6) {
-      setFormErrors({ otp: 'OTP must be exactly 6 digits' });
+    if (otp.length !== 4) {
+      setFormErrors({ otp: 'OTP must be exactly 4 digits' });
       return;
     }
 
@@ -123,27 +123,34 @@ export default function Login({ onNavigate }) {
               We have sent a security code to <strong>{tempMobile}</strong>.
             </p>
 
-            {receivedOtp && (
+            {receivedOtp ? (
               <div className="alert alert-success" style={{ background: 'rgba(6, 182, 212, 0.12)', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#22d3ee', textAlign: 'center', marginBottom: '20px' }}>
-                <strong>[Dev Helper] Mock SMS OTP:</strong>
+                <strong>[Dev Mode] Mock OTP:</strong>
                 <span style={{ display: 'block', fontSize: '1.5rem', fontWeight: 'bold', letterSpacing: '4px', marginTop: '5px' }}>
                   {receivedOtp}
+                </span>
+              </div>
+            ) : (
+              <div className="alert alert-success" style={{ background: 'rgba(6, 182, 212, 0.12)', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#22d3ee', textAlign: 'center', marginBottom: '20px' }}>
+                <strong>OTP Sent!</strong>
+                <span style={{ display: 'block', fontSize: '0.875rem', marginTop: '5px' }}>
+                  Please check your phone for the 4-digit code.
                 </span>
               </div>
             )}
 
             <div className="form-group">
-              <label className="form-label">Enter 6-Digit OTP</label>
+              <label className="form-label">Enter 4-Digit OTP</label>
               <input
                 type="text"
                 className="form-input pulse-focus"
-                placeholder="e.g. 123456"
+                placeholder="e.g. 1234"
                 value={otp}
                 onChange={(e) => {
                   setOtp(e.target.value);
                   setFormErrors({ ...formErrors, otp: null });
                 }}
-                maxLength="6"
+                maxLength="4"
                 style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '1.25rem' }}
               />
               {formErrors.otp && <span style={{ color: 'var(--error)', fontSize: '0.75rem', display: 'block', textAlign: 'center' }}>{formErrors.otp}</span>}

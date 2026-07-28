@@ -24,7 +24,24 @@ const assertNoPendingTransaction = async (tx, feeAssignmentId) => {
     throw Object.assign(new Error('This fee component has already been paid'), { statusCode: 400 });
   }
 
-  if (pending.method === 'CHEQUE' && pending.chequeRecords?.[0]?.depositStatus === 'deposit_pending') {
+  const chequeRecord = pending.chequeRecords?.[0];
+  const isStale = new Date(pending.createdAt) < new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  // Auto-cancel stale cheques (>24h old) regardless of deposit status
+  if (pending.method === 'CHEQUE' && isStale) {
+    await tx.transaction.update({
+      where: { id: pending.id },
+      data: { status: 'failed' }
+    });
+    await tx.chequeRecord.updateMany({
+      where: { transactionId: pending.id },
+      data: { depositStatus: 'cancelled' }
+    });
+    return;
+  }
+
+  // Auto-cancel non-stale cheques still in deposit_pending (not yet at bank)
+  if (pending.method === 'CHEQUE' && chequeRecord?.depositStatus === 'deposit_pending') {
     await tx.transaction.update({
       where: { id: pending.id },
       data: { status: 'failed' }
