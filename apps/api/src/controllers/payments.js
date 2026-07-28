@@ -475,6 +475,99 @@ const depositCash = async (req, res, next) => {
   }
 };
 
+const resolveConflict = async (req, res, next) => {
+  try {
+    const { localId, action, idempotencyKey, payment } = req.body;
+
+    if (!localId || !action || !idempotencyKey) {
+      throw new ValidationError('localId, action and idempotencyKey are required');
+    }
+    if (!['keep_both', 'skip'].includes(action)) {
+      throw new ValidationError('action must be keep_both or skip');
+    }
+
+    if (action === 'skip') {
+      const result = await prisma.$transaction(async (tx) => {
+        const feeAssignment = payment?.fee_assignment_id
+          ? await tx.feeAssignment.findUnique({
+              where: { id: Number(payment.fee_assignment_id) },
+              select: { studentId: true }
+            })
+          : null;
+
+        const ledgerEntry = await tx.ledgerEntry.create({
+          data: {
+            studentId: feeAssignment?.studentId || 0,
+            type: 'payment',
+            direction: 'credit',
+            amount: 0,
+            reference: `skip-resolve-${localId}`,
+            note: `Skipped duplicate offline payment (localId: ${localId}, idempotencyKey: ${idempotencyKey})`,
+            createdById: req.user.id
+          }
+        });
+
+        await logAudit({
+          actorId: req.user.id,
+          actorRole: req.user.role,
+          action: 'resolve_offline_conflict',
+          entity: 'transaction',
+          entityId: 0,
+          before: { localId, action: 'skip', idempotencyKey },
+          after: { resolved: true, ledgerEntryId: ledgerEntry.id, localId },
+          tx
+        });
+
+        return { resolved: true, action: 'skip', ledgerEntryId: ledgerEntry.id };
+      });
+
+      return res.status(200).json(result);
+    }
+
+    const newKey = `${idempotencyKey}-resolved-${localId}`;
+    let transaction;
+
+    if (payment?.method === 'CASH') {
+      transaction = await collectCash({
+        feeAssignmentId: payment.fee_assignment_id,
+        amount: payment.amount,
+        idempotencyKey: newKey,
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        deposited: false
+      });
+    } else {
+      transaction = await collectCheque({
+        feeAssignmentId: payment.fee_assignment_id,
+        amount: payment.amount,
+        chequeNo: payment?.cheque_no || 'UNKNOWN',
+        bank: payment?.bank || 'UNKNOWN',
+        idempotencyKey: newKey,
+        actorId: req.user.id,
+        actorRole: req.user.role
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await logAudit({
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        action: 'resolve_offline_conflict',
+        entity: 'transaction',
+        entityId: transaction.id,
+        before: { localId, action: 'keep_both', idempotencyKey },
+        after: { resolved: true, transactionId: transaction.id, newIdempotencyKey: newKey, localId },
+        tx
+      });
+    });
+
+    return res.status(200).json({ resolved: true, action: 'keep_both', transactionId: transaction.id });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   initiatePayment,
   handleWebhook,
@@ -484,6 +577,7 @@ module.exports = {
   collectManual,
   collectOffline,
   syncOffline,
+  resolveConflict,
   depositCash,
   canAutoPromoteMockPayment
 };

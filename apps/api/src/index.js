@@ -262,6 +262,12 @@ app.post(
   checkRole(['admin', 'cashier']),
   paymentsController.syncOffline
 );
+app.post(
+  '/api/payments/offline/resolve-conflict',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  paymentsController.resolveConflict
+);
 app.put(
   '/api/payments/:id/deposit',
   authenticate,
