@@ -1,5 +1,6 @@
 const prisma = require('../config/db');
 const { generateReceiptBase64 } = require('../utils/receipts');
+const { allocateReceiptNumber } = require('../domain/payments/receiptService');
 const { NotFoundError, ValidationError } = require('../errors/AppError');
 
 const getCheques = async (req, res, next) => {
@@ -109,6 +110,7 @@ const bounceCheque = async (req, res, next) => {
           feeAssignmentId: cheque.transaction.feeAssignmentId,
           amount: 500.00,
           type: 'penalty',
+          status: 'approved',
           reason: `Cheque bounce: ${bounce_reason || 'Insufficient funds'}`,
           approvedById: req.user.id,
           approvedAt: new Date()
@@ -166,6 +168,10 @@ const clearCheque = async (req, res, next) => {
       return res.status(200).json(cheque);
     }
 
+    if (cheque.depositStatus !== 'bank_pending') {
+      return res.status(400).json({ error: 'Cheque must be in bank_pending status to clear' });
+    }
+
     let updatedCheque;
 
     await prisma.$transaction(async (tx) => {
@@ -174,27 +180,7 @@ const clearCheque = async (req, res, next) => {
         data: { depositStatus: 'cleared' }
       });
 
-      const currentYear = new Date().getFullYear();
-      const successTxs = await tx.transaction.findMany({
-        where: {
-          status: 'success',
-          receiptNumber: { startsWith: `REC-${currentYear}-` }
-        }
-      });
-
-      let nextNum = 1;
-      if (successTxs.length > 0) {
-        const nums = successTxs.map(t => {
-          const parts = t.receiptNumber.split('-');
-          if (parts.length === 3) {
-            const seq = parseInt(parts[2], 10);
-            return isNaN(seq) ? 0 : seq;
-          }
-          return 0;
-        });
-        nextNum = Math.max(...nums) + 1;
-      }
-      const receiptNumber = `REC-${currentYear}-${String(nextNum).padStart(4, '0')}`;
+      const receiptNumber = await allocateReceiptNumber({ tx });
 
       const updatedTx = await tx.transaction.update({
         where: { id: cheque.transactionId },

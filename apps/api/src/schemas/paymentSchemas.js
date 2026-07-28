@@ -8,7 +8,8 @@ const initiatePaymentSchema = [
 
 const collectManualSchema = [
   numberField('feeAssignmentId', { integer: true, min: 1 }),
-  stringField('method', { oneOf: ['CASH', 'CHEQUE'] })
+  stringField('method', { oneOf: ['CASH', 'CHEQUE'] }),
+  stringField('idempotencyKey', { max: 100 })
 ];
 
 const collectOfflineSchema = [

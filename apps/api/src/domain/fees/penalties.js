@@ -15,6 +15,7 @@ const applyLatePenaltyIfNeeded = async (assignment) => {
       feeAssignmentId: assignment.id,
       amount: 500.00,
       type: 'penalty',
+      status: 'approved',
       reason: 'Late payment charge (Overdue 30 days limit)'
     }
   });

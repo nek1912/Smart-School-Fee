@@ -1,9 +1,9 @@
 const axios = require('axios');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../config/db');
 const { logAudit } = require('../middlewares/audit');
 const { CASHFREE_CLIENT_ID, CASHFREE_CLIENT_SECRET, CASHFREE_BASE_URL, verifySignature } = require('../config/cashfree');
-const { generateReceiptBase64 } = require('../utils/receipts');
-const { collectCash, collectCheque, markUpiSuccess, markUpiFailed } = require('../domain/payments/paymentService');
+const { collectCash, collectCheque, markUpiSuccess, markUpiFailed, assertNoPendingTransaction } = require('../domain/payments/paymentService');
 const { requireConfig } = require('../config/env');
 const { syncOfflinePayments } = require('../domain/payments/offlineSyncService');
 const { ValidationError, NotFoundError, AppError } = require('../errors/AppError');
@@ -16,52 +16,6 @@ const adjustedAmount = (assignment) => {
     if (item.status !== 'approved') return total;
     return item.type === 'penalty' ? total + Number(item.amount) : total - Number(item.amount);
   }, base);
-};
-
-const resolvePendingTransaction = async (assignmentId) => {
-  const pendingTx = await prisma.transaction.findFirst({
-    where: {
-      feeAssignmentId: assignmentId,
-      status: { in: ['pending', 'success'] }
-    },
-    include: { chequeRecords: true }
-  });
-  if (!pendingTx) return null;
-
-  if (pendingTx.status === 'success') {
-    throw new ValidationError('This fee component has already been paid');
-  }
-
-  const isCheque = pendingTx.method === 'CHEQUE';
-  const hasCheque = pendingTx.chequeRecords?.[0];
-  const hasDepositPending = hasCheque && ['deposit_pending', 'bank_pending'].includes(hasCheque.depositStatus);
-  const hasLongOverdue = new Date(pendingTx.createdAt) < new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h old
-
-  if (isCheque && hasLongOverdue) {
-    await prisma.transaction.update({
-      where: { id: pendingTx.id },
-      data: { status: 'failed' }
-    });
-    await prisma.chequeRecord.updateMany({
-      where: { transactionId: pendingTx.id },
-      data: { depositStatus: 'cancelled' }
-    });
-    return null;
-  }
-
-  if (isCheque && hasDepositPending && hasLongOverdue) {
-    await prisma.transaction.update({
-      where: { id: pendingTx.id },
-      data: { status: 'failed' }
-    });
-    await prisma.chequeRecord.updateMany({
-      where: { transactionId: pendingTx.id },
-      data: { depositStatus: 'cancelled' }
-    });
-    return null;
-  }
-
-  throw new ValidationError('A payment is already being processed for this fee component');
 };
 
 const initiatePayment = async (req, res, next) => {
@@ -103,8 +57,6 @@ const initiatePayment = async (req, res, next) => {
       throw new ValidationError('This fee component is already fully paid');
     }
 
-    await resolvePendingTransaction(assignment.id);
-
     if (assignment.student.guardianId !== guardianId) {
       throw new AppError('Unauthorized ward lookup', 403);
     }
@@ -112,17 +64,20 @@ const initiatePayment = async (req, res, next) => {
     const orderId = `ORD_${Date.now()}_${Math.floor(100 + Math.random() * 900)}`;
     const amount = adjustedAmount(assignment);
 
-    const transaction = await prisma.transaction.create({
-      data: {
-        studentId: assignment.studentId,
-        feeAssignmentId: assignment.id,
-        amount: amount,
-        method: 'UPI',
-        status: 'pending',
-        gatewayRef: orderId,
-        idempotencyKey
-      }
-    });
+    const transaction = await prisma.$transaction(async (tx) => {
+      await assertNoPendingTransaction(tx, assignment.id, 'UPI');
+      return tx.transaction.create({
+        data: {
+          studentId: assignment.studentId,
+          feeAssignmentId: assignment.id,
+          amount: amount,
+          method: 'UPI',
+          status: 'pending',
+          gatewayRef: orderId,
+          idempotencyKey
+        }
+      });
+    }, { isolationLevel: 'Serializable' });
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -248,7 +203,15 @@ const handleWebhook = async (req, res, next) => {
     }
 
     if (orderStatus === 'PAID' || orderStatus === 'SUCCESS' || orderStatus === 'SUCCESSFUL') {
-      await markUpiSuccess({ orderId, gatewayTxnId });
+      try {
+        await markUpiSuccess({ orderId, gatewayTxnId });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          console.log(`[Webhook] P2002 unique constraint on order ${orderId} — treating as already processed`);
+          return res.status(200).json({ status: 'already_processed' });
+        }
+        throw err;
+      }
       return res.status(200).json({ status: 'success' });
     }
     await markUpiFailed({ orderId, reason: orderStatus });
@@ -388,10 +351,8 @@ const collectManual = async (req, res, next) => {
       throw new ValidationError('Fee component is already paid');
     }
 
-    await resolvePendingTransaction(assignment.id);
-
     const amount = requestedAmount || adjustedAmount(assignment);
-    const idempotencyKey = req.body.idempotencyKey || `MAN_${feeAssignmentId}_${method}_${Date.now()}`;
+    const idempotencyKey = req.body.idempotencyKey || `MAN_${feeAssignmentId}_${method}`;
     const transaction = method === 'CASH'
       ? await collectCash({ feeAssignmentId, amount, idempotencyKey, actorId: req.user.id, actorRole: req.user.role, deposited })
       : await collectCheque({ feeAssignmentId, amount, chequeNo, bank, idempotencyKey, actorId: req.user.id, actorRole: req.user.role });
@@ -399,6 +360,13 @@ const collectManual = async (req, res, next) => {
     return res.status(201).json({ success: true, message: `${method} payment logged successfully`, transaction });
 
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const existingTx = await prisma.transaction.findFirst({
+        where: { feeAssignmentId: Number(feeAssignmentId), status: { in: ['pending', 'success'] } },
+        include: { chequeRecords: true }
+      });
+      if (existingTx) return res.status(200).json({ success: true, message: `${method} already processed`, transaction: existingTx });
+    }
     next(err);
   }
 };
@@ -416,9 +384,6 @@ const collectOffline = async (req, res, next) => {
       throw new ValidationError('Offline collection only supports CASH or CHEQUE');
     }
 
-    // Auto-cancel any stale pending transactions before processing new payment
-    await resolvePendingTransaction(Number(fee_assignment_id));
-
     const existingTx = await prisma.transaction.findUnique({
       where: { idempotencyKey: idempotency_key },
       include: { chequeRecords: true }
@@ -434,6 +399,13 @@ const collectOffline = async (req, res, next) => {
     return res.status(201).json(transaction);
 
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const existingTx = await prisma.transaction.findUnique({
+        where: { idempotencyKey: req.body.idempotency_key },
+        include: { chequeRecords: true }
+      });
+      if (existingTx) return res.status(200).json(existingTx);
+    }
     next(err);
   }
 };

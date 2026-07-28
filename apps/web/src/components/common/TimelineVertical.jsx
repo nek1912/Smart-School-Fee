@@ -9,7 +9,8 @@ const DOT_COLORS = {
 };
 
 function Dot({ type }) {
-  const color = DOT_COLORS[type] || '#64748b';
+  const prefix = type.split('_')[0];
+  const color = DOT_COLORS[prefix] || '#64748b';
   return (
     <div style={{
       position: 'absolute',

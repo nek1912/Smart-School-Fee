@@ -10,6 +10,7 @@ export default function Payment() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showAddWard, setShowAddWard] = useState(false);
+  const [feeFilter, setFeeFilter] = useState('unpaid');
 
   // 1. Fetch wards
   useEffect(() => {
@@ -71,6 +72,12 @@ export default function Payment() {
   };
 
   const selectedStudent = students.find(s => s.id.toString() === selectedStudentId);
+
+  const filteredAssignments = assignments.filter(a => {
+    if (feeFilter === 'unpaid') return a.status === 'pending' || a.status === 'overdue';
+    if (feeFilter === 'paid') return a.status === 'paid';
+    return true;
+  });
 
   const adjustedAmount = (asg) => {
     const base = Number(asg.feeStructure.amount);
@@ -149,7 +156,21 @@ export default function Payment() {
               No outstanding fees have been assigned to {selectedStudent.name} for the active term.
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
+                {['unpaid', 'paid', 'all'].map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={feeFilter === f ? 'btn' : 'btn btn-secondary'}
+                    style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                    onClick={() => setFeeFilter(f)}
+                  >
+                    {f === 'unpaid' ? 'Unpaid' : f === 'paid' ? 'Paid' : 'All'}
+                  </button>
+                ))}
+              </div>
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
@@ -162,7 +183,7 @@ export default function Payment() {
                   </tr>
                 </thead>
                 <tbody>
-                  {assignments.map((asg) => {
+                  {filteredAssignments.map((asg) => {
                     const isOverdue = new Date(asg.dueDate) < new Date() && asg.status !== 'paid';
                     return (
                       <tr key={asg.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
@@ -219,6 +240,7 @@ export default function Payment() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       )}

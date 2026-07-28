@@ -9,7 +9,7 @@ const SMS_PROVIDERS = {
 
 class SmsService {
   constructor() {
-    this.provider = process.env.SMS_PROVIDER || SMS_PROVIDERS.MOCK;
+    this.provider = (process.env.SMS_PROVIDER || SMS_PROVIDERS.MOCK).toLowerCase();
   }
 
   async sendOtp(mobile, otp) {

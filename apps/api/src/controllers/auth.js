@@ -31,7 +31,6 @@ const login = async (req, res, next) => {
     return res.status(200).json({
       message: result.message,
       mobile: result.mobile,
-      ...(result.otp && { otp: result.otp })
     });
   } catch (err) {
     next(err);
@@ -68,7 +67,6 @@ const forgotPassword = async (req, res, next) => {
     return res.status(200).json({
       message: result.message,
       ...(result.mobile ? { mobile: result.mobile } : {}),
-      ...(result.otp && { otp: result.otp })
     });
   } catch (err) {
     next(err);

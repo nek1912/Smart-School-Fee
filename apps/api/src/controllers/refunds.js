@@ -1,5 +1,6 @@
 const prisma = require('../config/db');
 const { generateReceiptBase64 } = require('../utils/receipts');
+const { allocateRefundReceiptNumber } = require('../domain/payments/receiptService');
 const { decrypt } = require('../utils/crypto');
 const { ValidationError, NotFoundError } = require('../errors/AppError');
 
@@ -50,24 +51,7 @@ const initiateRefund = async (req, res, next) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const currentYear = new Date().getFullYear();
-      const lastRef = await tx.transaction.findFirst({
-        where: {
-          status: 'reversed',
-          receiptNumber: { startsWith: `REF-${currentYear}-` }
-        },
-        orderBy: { receiptNumber: 'desc' }
-      });
-
-      let nextRefSeq = 1;
-      if (lastRef && lastRef.receiptNumber) {
-        const parts = lastRef.receiptNumber.split('-');
-        const lastSeq = parseInt(parts[2], 10);
-        if (!isNaN(lastSeq)) {
-          nextRefSeq = lastSeq + 1;
-        }
-      }
-      const receiptNumber = `REF-${currentYear}-${String(nextRefSeq).padStart(4, '0')}`;
+      const receiptNumber = await allocateRefundReceiptNumber({ tx });
 
       const refundTransaction = await tx.transaction.create({
         data: {

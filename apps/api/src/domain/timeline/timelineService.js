@@ -5,6 +5,7 @@ const CHEQUE_TYPE_MAP = {
   bank_pending: 'cheque_deposited',
   cleared: 'cheque_cleared',
   bounced: 'cheque_bounced',
+  cancelled: 'cheque_cancelled',
 };
 
 async function getStudentTimeline(studentId, { types, from, to, limit = 50, before } = {}) {
@@ -88,6 +89,7 @@ async function getStudentTimeline(studentId, { types, from, to, limit = 50, befo
       cheque_deposited: 'Cheque Deposited',
       cheque_cleared: 'Cheque Cleared',
       cheque_bounced: 'Cheque Bounced',
+      cheque_cancelled: 'Cheque Cancelled',
     };
     events.push({
       id: `cheque_${cr.id}`,
@@ -139,8 +141,8 @@ async function getStudentTimeline(studentId, { types, from, to, limit = 50, befo
     events.push({
       id: `ledger_${le.id}`,
       timestamp: le.createdAt,
-      type: 'refund',
-      title: le.direction === 'credit' ? 'Refund Issued' : 'Ledger Adjustment',
+      type: le.direction === 'credit' ? 'payment_success' : 'refund',
+      title: le.direction === 'credit' ? 'Payment Received' : 'Refund Issued',
       amount: Number(le.amount),
       status: 'completed',
       sourceId: le.id,
@@ -167,7 +169,7 @@ async function getStudentTimeline(studentId, { types, from, to, limit = 50, befo
 
   if (types) {
     const typeList = Array.isArray(types) ? types : types.split(',');
-    filtered = filtered.filter(e => typeList.includes(e.type));
+    filtered = filtered.filter(e => typeList.some(t => e.type === t || e.type.startsWith(t + '_')));
   }
 
   if (from) {
@@ -194,10 +196,21 @@ async function getStudentTimeline(studentId, { types, from, to, limit = 50, befo
   const pendingFees = feeAssignments.filter(
     fa => fa.status === 'pending' || fa.status === 'overdue'
   );
-  const totalPending = pendingFees.reduce(
-    (sum, fa) => sum + Number(fa.feeStructure.amount),
-    0
-  );
+  const wpByFee = {};
+  waiverPenalties.forEach(wp => {
+    if (!wpByFee[wp.feeAssignmentId]) wpByFee[wp.feeAssignmentId] = [];
+    wpByFee[wp.feeAssignmentId].push(wp);
+  });
+  const totalPending = pendingFees.reduce((sum, fa) => {
+    let amt = Number(fa.feeStructure.amount);
+    (wpByFee[fa.id] || [])
+      .filter(wp => wp.status === 'approved')
+      .forEach(wp => {
+        if (wp.type === 'penalty') amt += Number(wp.amount);
+        else if (wp.type === 'waiver') amt -= Number(wp.amount);
+      });
+    return sum + amt;
+  }, 0);
 
   const approvedWaivers = waiverPenalties.filter(
     wp => wp.type === 'waiver' && wp.status === 'approved'

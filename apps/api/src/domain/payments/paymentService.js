@@ -10,7 +10,27 @@ const assertAssignmentPayable = (assignment) => {
   }
 };
 
-const assertNoPendingTransaction = async (tx, feeAssignmentId) => {
+const archiveFailedTransactions = async (tx, feeAssignmentId, actorId = null) => {
+  const failed = await tx.transaction.findMany({
+    where: { feeAssignmentId, status: { in: ['failed', 'reversed'] } }
+  });
+  for (const txn of failed) {
+    await tx.auditLog.create({
+      data: {
+        actorId,
+        actorRole: 'system',
+        action: 'archive_failed_transaction',
+        entity: 'transaction',
+        entityId: txn.id,
+        before: { id: txn.id, status: txn.status, method: txn.method },
+        after: { id: txn.id, status: txn.status, archived: true, note: 'Archived before new payment attempt' }
+      }
+    });
+  }
+  return failed.length;
+};
+
+const assertNoPendingTransaction = async (tx, feeAssignmentId, newMethod = null) => {
   const pending = await tx.transaction.findFirst({
     where: {
       feeAssignmentId,
@@ -24,32 +44,35 @@ const assertNoPendingTransaction = async (tx, feeAssignmentId) => {
     throw Object.assign(new Error('This fee component has already been paid'), { statusCode: 400 });
   }
 
-  const chequeRecord = pending.chequeRecords?.[0];
-  const isStale = new Date(pending.createdAt) < new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const isStale = new Date(pending.createdAt) < new Date(Date.now() - 30 * 60 * 1000);
 
-  // Auto-cancel stale cheques (>24h old) regardless of deposit status
-  if (pending.method === 'CHEQUE' && isStale) {
+  // CASH payments always override any pending transaction (cash is immediate & irrevocable)
+  if (newMethod === 'CASH') {
     await tx.transaction.update({
       where: { id: pending.id },
       data: { status: 'failed' }
     });
-    await tx.chequeRecord.updateMany({
-      where: { transactionId: pending.id },
-      data: { depositStatus: 'cancelled' }
-    });
+    if (pending.method === 'CHEQUE') {
+      await tx.chequeRecord.updateMany({
+        where: { transactionId: pending.id },
+        data: { depositStatus: 'cancelled' }
+      });
+    }
     return;
   }
 
-  // Auto-cancel non-stale cheques still in deposit_pending (not yet at bank)
-  if (pending.method === 'CHEQUE' && chequeRecord?.depositStatus === 'deposit_pending') {
+  // Auto-cancel stale pending transactions (>30 min old)
+  if (isStale) {
     await tx.transaction.update({
       where: { id: pending.id },
       data: { status: 'failed' }
     });
-    await tx.chequeRecord.updateMany({
-      where: { transactionId: pending.id },
-      data: { depositStatus: 'cancelled' }
-    });
+    if (pending.method === 'CHEQUE') {
+      await tx.chequeRecord.updateMany({
+        where: { transactionId: pending.id },
+        data: { depositStatus: 'cancelled' }
+      });
+    }
     return;
   }
 
@@ -68,7 +91,8 @@ const collectCash = async ({ feeAssignmentId, amount, idempotencyKey, actorId, a
   return prisma.$transaction(async (tx) => {
     const assignment = await loadAssignment(tx, feeAssignmentId);
     assertAssignmentPayable(assignment);
-    await assertNoPendingTransaction(tx, assignment.id);
+    await archiveFailedTransactions(tx, assignment.id, actorId);
+    await assertNoPendingTransaction(tx, assignment.id, 'CASH');
     const paymentAmount = Number(amount || assignment.feeStructure.amount);
     const transaction = await tx.transaction.create({
       data: {
@@ -112,7 +136,7 @@ const collectCash = async ({ feeAssignmentId, amount, idempotencyKey, actorId, a
       }
     });
     return { ...receiptResult.transaction, receiptNumber: receiptResult.receiptNumber };
-  });
+  }, { isolationLevel: 'Serializable' });
 };
 
 const collectCheque = async ({ feeAssignmentId, amount, chequeNo, bank, idempotencyKey, actorId, actorRole }) => {
@@ -123,7 +147,8 @@ const collectCheque = async ({ feeAssignmentId, amount, chequeNo, bank, idempote
   return prisma.$transaction(async (tx) => {
     const assignment = await loadAssignment(tx, feeAssignmentId);
     assertAssignmentPayable(assignment);
-    await assertNoPendingTransaction(tx, assignment.id);
+    await archiveFailedTransactions(tx, assignment.id, actorId);
+    await assertNoPendingTransaction(tx, assignment.id, 'CHEQUE');
     const paymentAmount = Number(amount || assignment.feeStructure.amount);
     const transaction = await tx.transaction.create({
       data: {
@@ -150,7 +175,7 @@ const collectCheque = async ({ feeAssignmentId, amount, chequeNo, bank, idempote
       }
     });
     return { ...transaction, chequeRecords: [cheque] };
-  });
+  }, { isolationLevel: 'Serializable' });
 };
 
 const markUpiSuccess = async ({ orderId, gatewayTxnId, actorId = null }) => {
@@ -216,6 +241,7 @@ const markUpiFailed = async ({ orderId, reason = 'Gateway marked payment failed'
 
 module.exports = {
   assertAssignmentPayable,
+  assertNoPendingTransaction,
   collectCash,
   collectCheque,
   markUpiSuccess,
