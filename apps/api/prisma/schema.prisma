@@ -282,28 +282,37 @@ model PaymentOrder {
 }
 
 model ReconciliationBatch {
-  id          Int      @id @default(autoincrement())
-  uploadedById Int    @map("uploaded_by_id")
-  fileName    String? @map("file_name") @db.VarChar(255)
-  status      String  @default("processed") @db.VarChar(30)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp()
-  items       ReconciliationItem[]
+  id           Int      @id @default(autoincrement())
+  uploadedById Int     @map("uploaded_by_id")
+  fileName     String?  @map("file_name") @db.VarChar(255)
+  totalRows    Int      @default(0) @map("total_rows")
+  autoMatched  Int      @default(0) @map("auto_matched")
+  needsReview  Int      @default(0) @map("needs_review")
+  unmatchedCount Int    @default(0) @map("unmatched_count")
+  status       String   @default("processed") @db.VarChar(30)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp()
+  items        ReconciliationItem[]
 
   @@index([createdAt])
   @@map("reconciliation_batches")
 }
 
 model ReconciliationItem {
-  id            Int      @id @default(autoincrement())
-  batchId       Int      @map("batch_id")
-  batch         ReconciliationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  transactionId Int?     @map("transaction_id")
-  amount        Decimal  @db.Decimal(10, 2)
-  statementDate DateTime @map("statement_date") @db.Date
-  reference     String?  @db.VarChar(100)
-  status        String   @default("unmatched") @db.VarChar(30)
-  reason        String?  @db.VarChar(255)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp()
+  id              Int      @id @default(autoincrement())
+  batchId         Int      @map("batch_id")
+  batch           ReconciliationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transactionId   Int?     @map("transaction_id")
+  amount          Decimal  @db.Decimal(10, 2)
+  statementDate   DateTime @map("statement_date") @db.Date
+  reference       String?  @db.VarChar(100)
+  bankDescription String?  @map("bank_description") @db.VarChar(255)
+  status          String   @default("unmatched") @db.VarChar(30)
+  confidence      Int?     @default(0)
+  matchExplanation String? @map("match_explanation") @db.Text
+  reason          String?  @db.VarChar(255)
+  resolvedById    Int?     @map("resolved_by_id")
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamp()
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp()
 
   @@index([transactionId])
   @@index([status])
