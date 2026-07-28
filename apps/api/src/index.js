@@ -24,6 +24,7 @@ const waiversController = require('./controllers/waivers');
 const refundsController = require('./controllers/refunds');
 const expensesController = require('./controllers/expenses');
 const dashboardController = require('./controllers/dashboard');
+const studentImport = require('./controllers/studentImport');
 
 const app = express();
 const config = require('./config/env').requireConfig();
@@ -348,25 +349,25 @@ app.get(
 app.get(
   '/api/dashboard/metrics',
   authenticate,
-  checkRole(['admin']),
+  checkRole(['admin', 'guardian']),
   dashboardController.getMetrics
 );
 app.get(
   '/api/dashboard/revenue-breakdown',
   authenticate,
-  checkRole(['admin']),
+  checkRole(['admin', 'guardian']),
   dashboardController.getRevenueBreakdown
 );
 app.get(
   '/api/dashboard/defaulters',
   authenticate,
-  checkRole(['admin']),
+  checkRole(['admin', 'guardian']),
   dashboardController.getDefaulters
 );
 app.get(
   '/api/dashboard/reports',
   authenticate,
-  checkRole(['admin']),
+  checkRole(['admin', 'guardian']),
   dashboardController.getReports
 );
 
@@ -378,6 +379,14 @@ app.get(
   (req, res) => {
     res.json({ message: 'Welcome to Cashier Dashboard', cashierId: req.user.id });
   }
+);
+
+// XLS Student Import Route (Admin only)
+app.post(
+  '/api/admin/students/import',
+  authenticate,
+  checkRole(['admin']),
+  studentImport.importStudents
 );
 
 app.use(notFoundHandler);

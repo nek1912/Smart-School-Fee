@@ -36,6 +36,7 @@ model Student {
   consentTimestamp DateTime? @map("consent_timestamp") @db.Timestamp()
   dob              DateTime? @db.Date
   ocrFlagged       Boolean   @default(false) @map("ocr_flagged")
+  feesStatus       String    @default("not_assigned") @map("fees_status") @db.VarChar(20)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp()
 
   kycRecord        StudentKYC?
