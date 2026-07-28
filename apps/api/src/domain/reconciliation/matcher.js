@@ -116,22 +116,31 @@ const matchStatementRows = ({ rows: rawRows, transactions }) => {
 
   const usedTxIds = new Set();
   const handledIdxs = new Set();
+  const runnerUps = [];
 
   const candidates = [];
   for (const row of positiveRows) {
     for (const tx of transactions) {
       const score = scoreMatch(row, tx);
-      if (score >= 60) {
-        candidates.push({ row, tx, score, rowIdx: row._idx, txId: tx.id });
-      }
+      candidates.push({ row, tx, score, rowIdx: row._idx, txId: tx.id });
     }
   }
 
   candidates.sort((a, b) => b.score - a.score);
 
   for (const cand of candidates) {
-    if (usedTxIds.has(cand.txId)) continue;
-    if (handledIdxs.has(cand.rowIdx)) continue;
+    if (usedTxIds.has(cand.txId)) {
+      if (cand.score >= 60 && !handledIdxs.has(cand.rowIdx)) {
+        runnerUps.push(cand);
+      }
+      continue;
+    }
+    if (handledIdxs.has(cand.rowIdx)) {
+      if (cand.score >= 60 && !usedTxIds.has(cand.txId)) {
+        runnerUps.push(cand);
+      }
+      continue;
+    }
 
     usedTxIds.add(cand.txId);
     handledIdxs.add(cand.rowIdx);
@@ -140,20 +149,26 @@ const matchStatementRows = ({ rows: rawRows, transactions }) => {
     results.push({ row: cand.row, transaction: cand.tx, score: cand.score, category });
   }
 
+  for (const runner of runnerUps) {
+    results.push({ row: runner.row, transaction: runner.tx, score: runner.score, category: 'needs_review' });
+  }
+
   for (const row of positiveRows) {
     if (!handledIdxs.has(row._idx)) {
       results.push({ row, transaction: null, score: 0, category: 'unmatched' });
     }
   }
 
-  for (const r of results) delete r.row._idx;
+  for (const r of results) {
+    const { _idx, ...cleanRow } = r.row;
+    r.row = cleanRow;
+  }
 
   return results;
 };
 
 module.exports = {
   parseStatementCsv,
-  sameUtcDay,
   scoreMatch,
   matchStatementRows,
 };
