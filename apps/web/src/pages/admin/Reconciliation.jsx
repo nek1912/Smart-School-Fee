@@ -63,11 +63,13 @@ export default function Reconciliation() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [loading, setLoading] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [batchHistory, setBatchHistory] = useState([]);
   const [drawerItem, setDrawerItem] = useState(null);
   const [batchId, setBatchId] = useState(null);
+  const [csvText, setCsvText] = useState('');
 
   const loadHistory = useCallback(async () => {
     try {
@@ -112,15 +114,23 @@ export default function Reconciliation() {
   };
 
   const handleUpload = async () => {
+    if (!csvText.trim()) {
+      setError('Please paste CSV text before uploading');
+      return;
+    }
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      const res = await api.post('/reconciliation/upload');
+      const res = await api.post('/reconciliation/upload', { csvText });
       const data = res.data;
-      setItems(data.items || []);
-      setBatchId(data.batchId || data.id);
-      setSuccess(`Batch processed: ${data.items?.length || 0} items loaded`);
+      const batchRes = await api.get(`/reconciliation/${data.batchId}`);
+      setItems(batchRes.data.data?.items || batchRes.data.items || []);
+      setBatchId(data.batchId);
+      setSuccess(data.summary
+        ? `Batch processed: ${data.summary.totalRows} rows (${data.summary.autoMatched} auto-matched)`
+        : 'Batch processed successfully');
+      await loadHistory();
     } catch (err) {
       setError(normalizeApiError(err));
     } finally {
@@ -130,21 +140,22 @@ export default function Reconciliation() {
 
   const handleBulkAction = async (action) => {
     if (selectedIds.size === 0) return;
-    setLoading(true);
+    setBulkLoading(true);
     setError(null);
     try {
       await api.post('/reconciliation/bulk-action', {
-        ids: Array.from(selectedIds),
+        itemIds: Array.from(selectedIds),
         action
       });
       const res = await api.get(`/reconciliation/${batchId}`);
-      setItems(res.data.items || []);
+      const data = res.data.data || res.data;
+      setItems(data.items || []);
       setSelectedIds(new Set());
       setSuccess(`${action === 'approve' ? 'Approved' : 'Rejected'} ${selectedIds.size} item(s)`);
     } catch (err) {
       setError(normalizeApiError(err));
     } finally {
-      setLoading(false);
+      setBulkLoading(false);
     }
   };
 
@@ -152,7 +163,9 @@ export default function Reconciliation() {
     try {
       await api.put(`/reconciliation/item/${itemId}`, resolution);
       const res = await api.get(`/reconciliation/${batchId}`);
-      setItems(res.data.items || []);
+      const data = res.data.data || res.data;
+      setItems(data.items || []);
+      setDrawerItem(null);
       setSuccess('Item resolved');
     } catch (err) {
       setError(normalizeApiError(err));
@@ -172,11 +185,26 @@ export default function Reconciliation() {
       <div className="glass-panel" style={{ padding: '24px' }}>
         <h2 style={{ fontSize: '1.25rem', marginBottom: '12px' }}>Bank Statement Reconciliation</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-          Upload a CSV or process the latest pending batch to auto-match deposits with cashier records.
+          Paste CSV data below (date,amount,reference,description) and click upload to process.
         </p>
-        <button className="btn" onClick={handleUpload} disabled={loading}>
-          {loading ? 'Processing...' : 'Upload & Process'}
-        </button>
+        <textarea
+          className="form-input"
+          placeholder="date,amount,reference,description&#10;2026-01-15,5000,REF001,UPI payment&#10;2026-01-16,3000,REF002,CASH deposit"
+          value={csvText}
+          onChange={e => setCsvText(e.target.value)}
+          rows={4}
+          style={{ width: '100%', marginBottom: '12px', fontFamily: 'monospace', fontSize: '0.8rem' }}
+        />
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button className="btn" onClick={handleUpload} disabled={loading || !csvText.trim()}>
+            {loading ? 'Processing...' : 'Upload & Process'}
+          </button>
+          {csvText.trim() && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              {(csvText.match(/\n/g) || []).length + 1} rows
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Summary Bar */}
@@ -239,9 +267,9 @@ export default function Reconciliation() {
           {selectedIds.size > 0 && (
             <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{selectedIds.size} selected</span>
-              <button className="btn" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => handleBulkAction('approve')}>Approve</button>
-              <button className="btn btn-error" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => handleBulkAction('reject')}>Reject</button>
-              <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => setSelectedIds(new Set())}>Clear</button>
+              <button className="btn" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => handleBulkAction('approve')} disabled={bulkLoading}>{bulkLoading ? 'Processing...' : 'Approve'}</button>
+              <button className="btn btn-error" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => handleBulkAction('reject')} disabled={bulkLoading}>Reject</button>
+              <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }} onClick={() => setSelectedIds(new Set())} disabled={bulkLoading}>Clear</button>
             </div>
           )}
 
@@ -353,10 +381,7 @@ export default function Reconciliation() {
         <ReconciliationReviewDrawer
           item={drawerItem}
           onClose={() => setDrawerItem(null)}
-          onResolve={(resolution) => {
-            handleResolve(drawerItem.id, resolution);
-            setDrawerItem(null);
-          }}
+          onResolve={(resolution) => handleResolve(drawerItem.id, resolution)}
         />
       )}
     </div>

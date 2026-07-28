@@ -24,28 +24,15 @@ export default function ReconciliationReviewDrawer({ item, onClose, onResolve })
     setSubmitting(true);
     try {
       await onResolve({ action, ...extra });
+    } catch (err) {
+      console.error('Resolution failed:', err);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      right: 0,
-      width: '450px',
-      height: '100vh',
-      background: 'rgba(15,23,42,0.98)',
-      borderLeft: '1px solid var(--glass-border)',
-      backdropFilter: 'blur(24px)',
-      WebkitBackdropFilter: 'blur(24px)',
-      zIndex: 1000,
-      display: 'flex',
-      flexDirection: 'column',
-      boxShadow: '-8px 0 40px rgba(0,0,0,0.5)',
-      animation: 'slideIn 0.2s ease-out'
-    }}>
+    <div className="review-drawer">
       {/* Header */}
       <div style={{
         display: 'flex',
