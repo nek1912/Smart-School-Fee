@@ -33,7 +33,10 @@ export default function Receipts() {
 
   const handleDownloadReceipt = async (transactionId, receiptNumber) => {
     try {
-      const res = await axios.get(`/api/payments/receipt?transaction_id=${transactionId}`);
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/payments/receipt?transaction_id=${transactionId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const link = document.createElement('a');
       link.href = res.data.receiptUrl;
       link.download = `Receipt-${receiptNumber || 'Payment'}.pdf`;
