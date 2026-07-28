@@ -176,6 +176,50 @@ const getClassWiseAnalysis = async () => {
   }
 };
 
+const searchStudents = async (name) => {
+  try {
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return [];
+    }
+    const students = await prisma.student.findMany({
+      where: {
+        name: { contains: name.trim(), mode: 'insensitive' }
+      },
+      include: {
+        guardian: { select: { name: true, mobile: true } },
+        assignments: {
+          include: { feeStructure: { select: { amount: true, name: true } } },
+          where: { status: { in: ['pending', 'overdue'] } }
+        },
+        transactions: {
+          where: { status: 'success' },
+          select: { amount: true, method: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 10
+        }
+      }
+    });
+
+    return students.map(s => ({
+      id: s.id,
+      name: s.name,
+      class: s.class,
+      status: s.status,
+      guardian_name: s.guardian.name,
+      guardian_mobile: s.guardian.mobile,
+      pending_assignments: s.assignments.length,
+      pending_amount: Number(s.assignments.reduce((sum, a) => sum + Number(a.feeStructure.amount), 0)),
+      recent_payments: s.transactions.map(t => ({
+        amount: Number(t.amount),
+        method: t.method,
+        date: t.createdAt
+      }))
+    }));
+  } catch (error) {
+    throw new AppError('Failed to search students', 500);
+  }
+};
+
 module.exports = {
   getTodayCollection,
   getTopDefaulters,
@@ -186,5 +230,6 @@ module.exports = {
   getPendingWaivers,
   getChequeRisk,
   getCashierPerformance,
-  getClassWiseAnalysis
+  getClassWiseAnalysis,
+  searchStudents
 };

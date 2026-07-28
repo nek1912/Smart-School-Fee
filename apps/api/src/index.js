@@ -26,6 +26,11 @@ const expensesController = require('./controllers/expenses');
 const dashboardController = require('./controllers/dashboard');
 const copilotController = require('./controllers/copilot');
 
+// Warn if Gemini AI is not configured for copilot
+if (!process.env.GROQ_API_KEY) {
+  console.warn('[copilot] GROQ_API_KEY not set — using rule-based fallback. Set in .env for AI-powered responses.');
+}
+
 const app = express();
 const config = require('./config/env').requireConfig();
 const PORT = config.port;
@@ -411,7 +416,7 @@ app.get(
 );
 
 // === COPILOT ROUTE ===
-const copilotLimiter = rateLimit({ windowMs: 60000, max: 10 });
+const copilotLimiter = rateLimit({ windowMs: 60000, max: 30 });
 app.post(
   '/api/copilot/query',
   authenticate,

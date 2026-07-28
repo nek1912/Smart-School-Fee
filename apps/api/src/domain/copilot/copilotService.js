@@ -1,4 +1,5 @@
 const { classifyIntent, INTENTS } = require('./intentClassifier');
+const { processQuery: processWithAI } = require('./geminiService');
 const analyticsEngine = require('../analytics/analyticsEngine');
 
 const formatCurrency = (amount) =>
@@ -82,12 +83,46 @@ const buildChartPayload = (intent, data) => {
   }
 };
 
+const buildChartFromFunctionName = (fnName, data) => {
+  if (!Array.isArray(data) || !data.length) return null;
+  switch (fnName) {
+    case 'getPaymentMethodBreakdown':
+      return {
+        type: 'pie',
+        data: data.map(d => ({ name: d.method, value: d.total }))
+      };
+    case 'getRevenueBreakdown':
+      return {
+        type: 'bar',
+        data: data.map(d => ({ name: d.source || d.category || d.month || 'N/A', value: d.total || d.amount || 0 }))
+      };
+    case 'getCollectionTrend':
+      return {
+        type: 'line',
+        data: data.map(d => ({ name: d.month, value: d.total }))
+      };
+    default:
+      return null;
+  }
+};
+
 const processQuery = async (query) => {
+  const aiResult = await processWithAI(query);
+
+  if (aiResult) {
+    const chart = buildChartFromFunctionName(aiResult.functionName, aiResult.functionResult);
+    return {
+      answer: aiResult.answer,
+      data: aiResult.data,
+      chart: chart || aiResult.chart,
+      sourceNote: aiResult.sourceNote
+    };
+  }
+
   const intent = classifyIntent(query);
 
   if (intent === INTENTS.UNKNOWN) {
     return {
-      intent: INTENTS.UNKNOWN,
       answer: 'I can help with: top defaulters, today collection, revenue breakdown, pending dues, payment methods, collection trends, pending waivers, cheque risk, cashier performance, class-wise analysis',
       sourceNote: 'No matching query type found'
     };

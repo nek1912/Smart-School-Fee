@@ -53,9 +53,10 @@ export default function CopilotPanel({ open, onClose }) {
         sourceNote: reply.sourceNote || null,
       }]);
     } catch (err) {
+      const errMsg = err.response?.data?.error || err.message || 'Please try again.';
       setMessages((prev) => [...prev, {
         role: 'assistant',
-        content: 'Sorry, I encountered an error processing your request. Please try again.',
+        content: `Sorry, I encountered an error: ${errMsg}`,
         sourceNote: null,
       }]);
     } finally {

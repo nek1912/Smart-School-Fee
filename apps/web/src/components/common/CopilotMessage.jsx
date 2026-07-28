@@ -65,8 +65,9 @@ const InlineChart = ({ chart }) => {
 };
 
 const DataTable = ({ data }) => {
-  if (!data || data.length === 0) return null;
-  const keys = Object.keys(data[0]);
+  const rows = Array.isArray(data) ? data.filter(Boolean) : [];
+  if (rows.length === 0) return null;
+  const keys = Object.keys(rows[0]);
 
   return (
     <div style={{ overflowX: 'auto', marginTop: 8, fontSize: '0.75rem' }}>
@@ -81,13 +82,27 @@ const DataTable = ({ data }) => {
           </tr>
         </thead>
         <tbody>
-          {data.slice(0, 8).map((row, i) => (
+          {rows.slice(0, 8).map((row, i) => (
             <tr key={i}>
-              {keys.map((k) => (
-                <td key={k} style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#e2e8f0' }}>
-                  {typeof row[k] === 'number' ? `₹${row[k].toLocaleString('en-IN')}` : row[k]}
-                </td>
-              ))}
+              {keys.map((k) => {
+                const val = row[k];
+                const isCurrencyKey = /amount|total|fee|price|dues|collection|pending|revenue|payment/i.test(k);
+                let display;
+                if (typeof val === 'number' && isCurrencyKey) {
+                  display = `₹${val.toLocaleString('en-IN')}`;
+                } else if (val === null || val === undefined) {
+                  display = '—';
+                } else if (typeof val === 'object') {
+                  display = Array.isArray(val) ? `[${val.length} items]` : JSON.stringify(val);
+                } else {
+                  display = String(val);
+                }
+                return (
+                  <td key={k} style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#e2e8f0' }}>
+                    {display}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
