@@ -24,6 +24,7 @@ const waiversController = require('./controllers/waivers');
 const refundsController = require('./controllers/refunds');
 const expensesController = require('./controllers/expenses');
 const dashboardController = require('./controllers/dashboard');
+const copilotController = require('./controllers/copilot');
 
 const app = express();
 const config = require('./config/env').requireConfig();
@@ -407,6 +408,16 @@ app.get(
   authenticate,
   checkRole(['admin']),
   dashboardController.getReports
+);
+
+// === COPILOT ROUTE ===
+const copilotLimiter = rateLimit({ windowMs: 60000, max: 10 });
+app.post(
+  '/api/copilot/query',
+  authenticate,
+  checkRole(['admin']),
+  copilotLimiter,
+  copilotController.processQuery
 );
 
 // Protected Cashier Testing Route (RBAC verification)
