@@ -31,9 +31,10 @@ const auditLogger = (entity, actionName) => {
   };
 };
 
-const logAudit = async ({ actorId, actorRole, action, entity, entityId, before, after }) => {
+const logAudit = async ({ actorId, actorRole, action, entity, entityId, before, after, tx }) => {
   try {
-    await prisma.auditLog.create({
+    const db = tx || prisma;
+    await db.auditLog.create({
       data: {
         actorId,
         actorRole,

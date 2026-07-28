@@ -6,6 +6,7 @@ import DefaulterList from '../../components/dashboard/DefaulterList';
 import QuickActions from '../../components/dashboard/QuickActions';
 import Reports from './Reports';
 import { useDashboardQuery } from '../../hooks/useDashboardQuery';
+import CopilotPanel from '../../components/common/CopilotPanel';
 
 // React Icons replacement as clean SVGs
 const BankIcon = () => (
@@ -53,6 +54,7 @@ export default function Dashboard({ setAdminTab }) {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [assignments, setAssignments] = useState([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [waiverAmount, setWaiverAmount] = useState('');
   const [waiverReason, setWaiverReason] = useState('');
 
@@ -335,6 +337,19 @@ export default function Dashboard({ setAdminTab }) {
       {/* Floating Action Trigger Bar */}
       <QuickActions onAction={handleActionClick} />
 
+      {/* AI Copilot FAB */}
+      <button
+        className="copilot-fab"
+        onClick={() => setCopilotOpen(true)}
+        title="Open AI Copilot"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          <line x1="9" y1="10" x2="15" y2="10" />
+        </svg>
+      </button>
+
+      {copilotOpen && <CopilotPanel open={copilotOpen} onClose={() => setCopilotOpen(false)} />}
     </div>
   );
 }

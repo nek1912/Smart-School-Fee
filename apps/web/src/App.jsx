@@ -23,6 +23,7 @@ import Dashboard from './pages/admin/Dashboard';
 import Reports from './pages/admin/Reports';
 import Expenses from './pages/admin/Expenses';
 import Students from './pages/admin/Students';
+import Timeline from './pages/admin/Timeline';
 
 export default function App() {
   const { user, token, logout, submitConsent, successMessage, error, clearAlerts } = useAuthStore();
@@ -392,6 +393,7 @@ export default function App() {
               {adminTab === 'reports' && <Reports />}
               {adminTab === 'reconciliation' && <Reconciliation />}
               {adminTab === 'expenses' && <Expenses />}
+              {adminTab === 'timeline' && <Timeline />}
 
             </div>
           )}

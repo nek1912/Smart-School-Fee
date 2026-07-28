@@ -6,7 +6,8 @@ const tabsByRole = {
     ['approvals', 'Approvals'],
     ['reports', 'Reports'],
     ['reconciliation', 'Reconciliation'],
-    ['expenses', 'Expenses']
+    ['expenses', 'Expenses'],
+    ['timeline', 'Timeline']
   ],
   cashier: [
     ['collect', 'Collect'],

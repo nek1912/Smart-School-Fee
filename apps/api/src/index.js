@@ -25,6 +25,12 @@ const refundsController = require('./controllers/refunds');
 const expensesController = require('./controllers/expenses');
 const dashboardController = require('./controllers/dashboard');
 const studentImport = require('./controllers/studentImport');
+const copilotController = require('./controllers/copilot');
+
+// Warn if GROQ AI is not configured for copilot
+if (!process.env.GROQ_API_KEY) {
+  console.warn('[copilot] GROQ_API_KEY not set — using rule-based fallback. Set in .env for AI-powered responses.');
+}
 
 const app = express();
 const config = require('./config/env').requireConfig();
@@ -202,6 +208,15 @@ app.post(
   kycController.rejectStudent
 );
 
+// === TIMELINE ROUTES ===
+const timelineController = require('./controllers/timeline');
+app.get(
+  '/api/students/:id/timeline',
+  authenticate,
+  checkRole(['admin', 'cashier', 'guardian']),
+  timelineController.getTimeline
+);
+
 // === PAYMENTS & TRANSACTIONS ROUTES ===
 app.post(
   '/api/payments/initiate',
@@ -254,6 +269,12 @@ app.post(
   checkRole(['admin', 'cashier']),
   paymentsController.syncOffline
 );
+app.post(
+  '/api/payments/offline/resolve-conflict',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  paymentsController.resolveConflict
+);
 app.put(
   '/api/payments/:id/deposit',
   authenticate,
@@ -289,6 +310,30 @@ app.post(
   authenticate,
   checkRole(['admin', 'cashier']),
   reconController.uploadStatement
+);
+app.get(
+  '/api/reconciliation/history',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.getHistory
+);
+app.get(
+  '/api/reconciliation/:id',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.getBatch
+);
+app.put(
+  '/api/reconciliation/item/:id',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.resolveItem
+);
+app.post(
+  '/api/reconciliation/bulk-action',
+  authenticate,
+  checkRole(['admin', 'cashier']),
+  reconController.bulkAction
 );
 
 // === WAIVER & PENALTY ROUTES ===
@@ -369,6 +414,16 @@ app.get(
   authenticate,
   checkRole(['admin', 'guardian']),
   dashboardController.getReports
+);
+
+// === COPILOT ROUTE ===
+const copilotLimiter = rateLimit({ windowMs: 60000, max: 30 });
+app.post(
+  '/api/copilot/query',
+  authenticate,
+  checkRole(['admin']),
+  copilotLimiter,
+  copilotController.processQuery
 );
 
 // Protected Cashier Testing Route (RBAC verification)

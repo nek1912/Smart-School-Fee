@@ -7,10 +7,11 @@ export default function DefaulterList() {
   const [filterClass, setFilterClass] = useState('');
 
   // Fetch live prioritized defaulters data
-  const { data: defaulters = [], loading } = useDashboardQuery('/api/dashboard/defaulters', {
+  const { data, loading } = useDashboardQuery('/api/dashboard/defaulters', {
     sort_by: sortBy,
     filter_class: filterClass
   }, 5000);
+  const defaulters = data ?? [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
