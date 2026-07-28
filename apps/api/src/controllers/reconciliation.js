@@ -140,7 +140,8 @@ const resolveItem = async (req, res, next) => {
         entity: 'reconciliation_item',
         entityId: Number(id),
         before: { status: item.status, transactionId: item.transactionId },
-        after: { status: updateData.status, transactionId: updateData.transactionId || null }
+        after: { status: updateData.status, transactionId: updateData.transactionId || null },
+        tx
       });
 
       return updated;
@@ -170,7 +171,7 @@ const bulkAction = async (req, res, next) => {
     });
 
     if (items.length !== itemIds.length) {
-      throw new NotFoundError('One or more ReconciliationItems not found');
+      throw new NotFoundError('One or more ReconciliationItems');
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -195,7 +196,8 @@ const bulkAction = async (req, res, next) => {
           entity: 'reconciliation_item',
           entityId: item.id,
           before: { status: item.status, transactionId: item.transactionId },
-          after: { status: updateData.status, transactionId: updateData.transactionId || null }
+          after: { status: updateData.status, transactionId: updateData.transactionId || null },
+          tx
         });
 
         updatedItems.push(updated);
