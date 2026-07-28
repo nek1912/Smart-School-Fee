@@ -279,7 +279,6 @@ async function main() {
       method: 'UPI',
       status: 'success',
       gatewayRef: 'ORD_S2_TX1',
-      receiptNumber: 'REC-2026-0001',
       depositedAt: new Date('2026-07-15')
     },
     create: {
@@ -289,7 +288,6 @@ async function main() {
       method: 'UPI',
       status: 'success',
       gatewayRef: 'ORD_S2_TX1',
-      receiptNumber: 'REC-2026-0001',
       idempotencyKey: 'SEED_S2_TX1',
       depositedAt: new Date('2026-07-15')
     }
@@ -304,7 +302,6 @@ async function main() {
       method: 'CASH',
       status: 'success',
       gatewayRef: 'ORD_S2_TX2',
-      receiptNumber: 'REC-2026-0002',
       depositedAt: new Date('2026-08-01')
     },
     create: {
@@ -314,7 +311,6 @@ async function main() {
       method: 'CASH',
       status: 'success',
       gatewayRef: 'ORD_S2_TX2',
-      receiptNumber: 'REC-2026-0002',
       idempotencyKey: 'SEED_S2_TX2',
       depositedAt: new Date('2026-08-01')
     }
