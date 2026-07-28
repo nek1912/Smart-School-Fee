@@ -306,6 +306,7 @@ model ReconciliationItem {
   statementDate   DateTime @map("statement_date") @db.Date
   reference       String?  @db.VarChar(100)
   bankDescription String?  @map("bank_description") @db.VarChar(255)
+  // status values: 'auto_matched' | 'needs_review' | 'matched' | 'unmatched' | 'rejected'
   status          String   @default("unmatched") @db.VarChar(30)
   confidence      Int?     @default(0)
   matchExplanation String? @map("match_explanation") @db.Text
