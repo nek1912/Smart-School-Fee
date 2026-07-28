@@ -201,6 +201,15 @@ app.post(
   kycController.rejectStudent
 );
 
+// === TIMELINE ROUTES ===
+const timelineController = require('./controllers/timeline');
+app.get(
+  '/api/students/:id/timeline',
+  authenticate,
+  checkRole(['admin', 'cashier', 'guardian']),
+  timelineController.getTimeline
+);
+
 // === PAYMENTS & TRANSACTIONS ROUTES ===
 app.post(
   '/api/payments/initiate',
