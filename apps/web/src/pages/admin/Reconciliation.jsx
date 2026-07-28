@@ -359,10 +359,10 @@ export default function Reconciliation() {
                 {batchHistory.map(batch => (
                   <tr key={batch.id || batch._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                     <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>{batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : '—'}</td>
-                    <td style={{ padding: '10px 8px' }}>{batch.total || batch.itemCount || 0}</td>
-                    <td style={{ padding: '10px 8px', color: 'var(--success)' }}>{batch.matched || 0}</td>
+                    <td style={{ padding: '10px 8px' }}>{batch.totalRows || 0}</td>
+                    <td style={{ padding: '10px 8px', color: 'var(--success)' }}>{batch.autoMatched || 0}</td>
                     <td style={{ padding: '10px 8px', color: 'var(--warning)' }}>{batch.needsReview || 0}</td>
-                    <td style={{ padding: '10px 8px', color: 'var(--error)' }}>{batch.unmatched || 0}</td>
+                    <td style={{ padding: '10px 8px', color: 'var(--error)' }}>{batch.unmatchedCount || 0}</td>
                     <td style={{ padding: '10px 8px' }}>
                       <span className={`badge ${batch.status === 'completed' ? 'badge-active' : 'badge-pending'}`} style={{ fontSize: '0.65rem', padding: '2px 8px' }}>
                         {batch.status || 'unknown'}

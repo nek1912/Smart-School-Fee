@@ -36,6 +36,17 @@ const uploadStatement = async (req, res, next) => {
         }
       });
 
+      await logAudit({
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        action: 'reconciliation_upload',
+        entity: 'reconciliation_batch',
+        entityId: createdBatch.id,
+        before: null,
+        after: { totalRows, autoMatched, needsReview, unmatchedCount },
+        tx
+      });
+
       for (const result of results) {
         const matchExplanation = result.transaction
           ? `Matched with ${result.transaction.receiptNumber || 'transaction'} (score: ${result.score})`

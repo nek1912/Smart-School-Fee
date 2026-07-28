@@ -65,20 +65,17 @@ const buildChartPayload = (intent, data) => {
     case INTENTS.PAYMENT_METHODS:
       return {
         type: 'pie',
-        labels: data.map(d => d.method),
-        values: data.map(d => d.total)
+        data: data.map(d => ({ name: d.method, value: d.total }))
       };
     case INTENTS.REVENUE_BREAKDOWN:
       return {
         type: 'bar',
-        labels: data.map(d => d.source || d.category || d.month || 'N/A'),
-        values: data.map(d => d.total || d.amount || 0)
+        data: data.map(d => ({ name: d.source || d.category || d.month || 'N/A', value: d.total || d.amount || 0 }))
       };
     case INTENTS.COLLECTION_TREND:
       return {
         type: 'line',
-        labels: data.map(d => d.month),
-        values: data.map(d => d.total)
+        data: data.map(d => ({ name: d.month, value: d.total }))
       };
     default:
       return null;

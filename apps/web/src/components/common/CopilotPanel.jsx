@@ -44,7 +44,7 @@ export default function CopilotPanel({ open, onClose }) {
 
     try {
       const res = await api.post('/copilot/query', { query: text });
-      const reply = res.data;
+      const reply = res.data.data;
       setMessages((prev) => [...prev, {
         role: 'assistant',
         content: reply.answer || reply.message || '',
